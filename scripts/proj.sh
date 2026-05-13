@@ -5,7 +5,7 @@
 #   proj <project-name> [options]
 #
 # Options:
-#   --dir <path>       Base directory to create project in (default: ~/Documents/repos/claude-projects)
+#   --dir <path>       Base directory to create project in (default: current directory)
 #   --jira <KEY>       Jira project key (e.g. AIDP)
 #   --dry-run          Print what would be created; write nothing
 #   --force            Overwrite if target directory already exists
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 # ── defaults ─────────────────────────────────────────────────────────────────
-BASE_DIR="${HOME}/Documents/repos/claude-projects"
+BASE_DIR="$(pwd)"
 JIRA_KEY=""
 DRY_RUN=false
 FORCE=false
