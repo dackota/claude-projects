@@ -63,6 +63,5 @@ session. File names MUST use dash separated words. For all Markdown files in
   project. Clone the required repos here.
 
 - Worktrees is a directory that stores git worktrees needed by this project.
-  Worktrees MUST be used when working on Tasks. You MUST NOT directly create
-  worktrees. 
+  Worktrees MUST be used when working on Tasks.
 
