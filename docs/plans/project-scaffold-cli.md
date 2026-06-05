@@ -1,11 +1,20 @@
 ---
 title: Project Scaffold CLI
-type: plan
-status: draft
 created: 2026-05-13
+last_updated: 2026-06-04
+status: superseded
+supersedes: []
+superseded_by: scripts/proj.sh
+related: []
+jira: null
+task: null
 ---
 
 # Project Scaffold CLI
+
+> **Superseded 2026-06-04:** Implemented as `scripts/proj.sh` (renamed `proj`, not `new-project`). The CLI flags, scaffold structure, embedded CLAUDE.md heredoc, dry-run, and smoke tests described here are all present in `proj.sh` and `scripts/test-proj.sh`.
+
+
 
 ## Problem
 

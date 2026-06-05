@@ -3,6 +3,11 @@ title: Living Status and Journal System
 created: 2026-06-04
 last_updated: 2026-06-04
 status: active
+supersedes: []
+superseded_by: null
+related: []
+jira: null
+task: null
 ---
 
 # Living Status and Journal System
