@@ -197,11 +197,11 @@ session. File names MUST use dash-separated words. For all Markdown files in
 
 - Repos is a directory that stores repositories needed by this project. These
   repositories may be needed for research or changes in order to complete the
-  project. Clone the required repos here.
+  project. Clone the required repos here. Every time a repo is used for any 
+  task it must be updated first so its always the latest.
 
 - Worktrees is a directory that stores git worktrees needed by this project.
-  Worktrees MUST be used when working on Tasks. You MUST NOT directly create
-  worktrees.
+  Worktrees MUST be used when working on Tasks.
 CLAUDE_MD_EOF
 }
 
