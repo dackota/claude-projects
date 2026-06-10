@@ -364,6 +364,7 @@ if $COPY_SKILLS; then
     warn "--skills requested but skills directory not found: $SKILLS_SRC"
     warn "Skills will not be copied. Check your installation."
   else
+    JOURNAL_HOOKS_NEEDED=false
     for skill in $SKILLS_TO_COPY; do
       SRC="${SKILLS_SRC}/${skill}"
       DEST="${TARGET}/.claude/skills/${skill}"
@@ -373,11 +374,50 @@ if $COPY_SKILLS; then
       fi
       if $DRY_RUN; then
         echo "  [skill] .claude/skills/${skill}/"
+        [[ "$skill" == "journal" ]] && echo "  [file] .claude/settings.json  (journal hooks)"
       else
         mkdir -p "$(dirname "$DEST")"
         cp -r "$SRC" "$DEST"
+        [[ "$skill" == "journal" ]] && JOURNAL_HOOKS_NEEDED=true
       fi
     done
+
+    # Wire journal hooks into .claude/settings.json when journal skill is present
+    if $JOURNAL_HOOKS_NEEDED; then
+      write_file "$TARGET/.claude/settings.json" "$(cat << 'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/skills/journal/hooks/journal-check.sh",
+            "asyncRewake": true,
+            "rewakeSummary": "Journal entry may be needed"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/skills/journal/hooks/journal-stop.sh",
+            "asyncRewake": true,
+            "rewakeSummary": "Unlogged journal events detected"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+      )"
+    fi
   fi
 fi
 
