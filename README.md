@@ -2,6 +2,52 @@
 
 Scaffolding and conventions for Claude Code project workspaces.
 
+## Install
+
+```bash
+git clone git@github.com:dackota/claude-projects.git ~/Documents/repos/claude-projects
+cd ~/Documents/repos/claude-projects
+
+# Make proj available on your PATH
+ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj
+
+# Symlink all skills into ~/.claude/skills/ so they're available in every project
+ln -s "$(pwd)/skills/sync-status" ~/.claude/skills/sync-status
+ln -s "$(pwd)/skills/journal"     ~/.claude/skills/journal
+ln -s "$(pwd)/skills/grill-me"    ~/.claude/skills/grill-me
+ln -s "$(pwd)/skills/to-prd"      ~/.claude/skills/to-prd
+ln -s "$(pwd)/skills/to-issues"   ~/.claude/skills/to-issues
+ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
+```
+
+## Quick start
+
+```bash
+# Scaffold a new workspace with all skills and auto-wired hooks
+proj my-feature --skills
+
+cd my-feature
+
+# Fill in your goal
+$EDITOR PROJECT.md
+
+# Start a session — Claude reads STATUS.md first for context
+claude .
+```
+
+From there, use the skills as you work. They compose into a natural flow:
+
+```
+/grill-me      ← stress-test the idea
+/to-prd        ← write the spec
+/to-issues     ← break it into tickets
+/tdd           ← implement each ticket
+/journal       ← log events as they happen (also fires automatically)
+/sync-status   ← update STATUS.md at session end (also fires automatically)
+```
+
+---
+
 ## What this is
 
 Each project workspace is a directory that Claude Code uses as context for a focused body of work — a feature, migration, investigation, etc. This repo defines the structure those workspaces follow, provides a CLI to create them, and ships a set of skills that keep Claude oriented across sessions.
@@ -112,7 +158,7 @@ task: null
 
 ## Skills
 
-Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink any skill globally for use across all projects.
+Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink them globally (see Install) for use across all projects.
 
 When the `journal` or `sync-status` skills are copied, `proj` also creates `.claude/settings.json` with `asyncRewake` hooks that automatically prompt Claude to log events and keep `STATUS.md` current.
 
@@ -216,37 +262,6 @@ At the end of any session where meaningful work happened, `/sync-status` regener
 Every new session starts with Claude reading `STATUS.md` — a dense ~500-token synthesis of where the project is, what's active, what's blocked, and what comes next. No re-orientation cost.
 
 ---
-
-## Install
-
-**CLI**
-
-```bash
-# Symlink (recommended)
-ln -s /path/to/claude-projects/scripts/proj.sh /usr/local/bin/proj
-
-# Or add to PATH in ~/.zshrc
-export PATH="$PATH:/path/to/claude-projects/scripts"
-```
-
-**Skills — global symlinks (one-time per machine)**
-
-```bash
-cd /path/to/claude-projects
-ln -s "$(pwd)/skills/sync-status" ~/.claude/skills/sync-status
-ln -s "$(pwd)/skills/journal"     ~/.claude/skills/journal
-ln -s "$(pwd)/skills/grill-me"    ~/.claude/skills/grill-me
-ln -s "$(pwd)/skills/to-prd"      ~/.claude/skills/to-prd
-ln -s "$(pwd)/skills/to-issues"   ~/.claude/skills/to-issues
-ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
-```
-
-**Skills — per-project copies (via proj)**
-
-```bash
-proj my-project --skills            # copy all skills + wire hooks
-proj my-project --skills tdd,grill-me  # copy a subset
-```
 
 ## Tests
 
