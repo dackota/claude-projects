@@ -10,8 +10,14 @@ cd ~/Documents/repos/claude-projects
 
 # Make proj available on your PATH
 ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj
+```
 
-# Symlink all skills into ~/.claude/skills/ so they're available in every project
+Skills are **project-local by default** — `proj --skills` copies them into each workspace's `.claude/skills/` and wires the hooks automatically. Nothing else needed.
+
+**Optional: make skills available globally** across all projects (not just ones scaffolded with `proj`):
+
+```bash
+cd ~/Documents/repos/claude-projects
 ln -s "$(pwd)/skills/sync-status" ~/.claude/skills/sync-status
 ln -s "$(pwd)/skills/journal"     ~/.claude/skills/journal
 ln -s "$(pwd)/skills/grill-me"    ~/.claude/skills/grill-me
@@ -19,6 +25,8 @@ ln -s "$(pwd)/skills/to-prd"      ~/.claude/skills/to-prd
 ln -s "$(pwd)/skills/to-issues"   ~/.claude/skills/to-issues
 ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
 ```
+
+> **Note:** If you install skills both globally and per-project, hooks will fire twice. Pick one approach per machine.
 
 ## Quick start
 
@@ -160,7 +168,7 @@ task: null
 
 Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink them globally (see Install) for use across all projects.
 
-When the `journal` or `sync-status` skills are copied, `proj` also creates `.claude/settings.json` with `asyncRewake` hooks that automatically prompt Claude to log events and keep `STATUS.md` current.
+Skills are copied per-project by default. When the `journal` or `sync-status` skills are copied, `proj` also creates `.claude/settings.json` with `asyncRewake` hooks that automatically prompt Claude to log events and keep `STATUS.md` current.
 
 ### /journal
 
