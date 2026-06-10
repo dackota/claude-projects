@@ -7,6 +7,9 @@
 # Options:
 #   --dir <path>       Base directory to create project in (default: current directory)
 #   --jira <KEY>       Jira project key (e.g. AIDP)
+#   --skills [LIST]    Copy skills into .claude/skills/ in the new project.
+#                      LIST is an optional comma-separated subset (e.g. tdd,grill-me).
+#                      Omit LIST to copy all bundled skills: grill-me, to-prd, to-issues, tdd.
 #   --dry-run          Print what would be created; write nothing
 #   --force            Overwrite if target directory already exists
 #   --show-claude-md   Print the embedded CLAUDE.md to stdout and exit
@@ -24,6 +27,20 @@ JIRA_KEY=""
 DRY_RUN=false
 FORCE=false
 PROJECT_NAME=""
+COPY_SKILLS=false
+SKILLS_LIST=""  # empty = all bundled skills
+
+ALL_BUNDLED_SKILLS="grill-me to-prd to-issues tdd"
+
+# Resolve script's real directory (handles symlinks on macOS)
+_SCRIPT="${BASH_SOURCE[0]}"
+while [[ -L "$_SCRIPT" ]]; do
+  _SCRIPT_DIR="$(cd "$(dirname "$_SCRIPT")" && pwd)"
+  _SCRIPT="$(readlink "$_SCRIPT")"
+  [[ "$_SCRIPT" != /* ]] && _SCRIPT="${_SCRIPT_DIR}/${_SCRIPT}"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_SCRIPT")" && pwd)"
+SKILLS_SRC="${SCRIPT_DIR}/../skills"
 
 # ── colours ──────────────────────────────────────────────────────────────────
 GREEN="\033[0;32m"
@@ -219,6 +236,14 @@ while [[ $# -gt 0 ]]; do
     --force)           FORCE=true; shift ;;
     --dir)             [[ $# -lt 2 ]] && die "--dir requires an argument"; BASE_DIR="$2"; shift 2 ;;
     --jira)            [[ $# -lt 2 ]] && die "--jira requires an argument"; JIRA_KEY="$2"; shift 2 ;;
+    --skills)
+      COPY_SKILLS=true
+      # optional next arg: comma-separated skill names (not starting with -)
+      if [[ $# -gt 1 && "$2" != -* ]]; then
+        SKILLS_LIST="${2//,/ }"  # normalise commas to spaces
+        shift
+      fi
+      shift ;;
     -*)                die "Unknown option: $1" ;;
     *)
       [[ -n "$PROJECT_NAME" ]] && die "Unexpected argument: $1 (project name already set to '${PROJECT_NAME}')"
@@ -330,6 +355,31 @@ EOF
 
 # journal.yaml
 write_file "$TARGET/journal.yaml" "[]"
+
+# ── skills ───────────────────────────────────────────────────────────────────
+if $COPY_SKILLS; then
+  SKILLS_TO_COPY="${SKILLS_LIST:-$ALL_BUNDLED_SKILLS}"
+
+  if [[ ! -d "$SKILLS_SRC" ]]; then
+    warn "--skills requested but skills directory not found: $SKILLS_SRC"
+    warn "Skills will not be copied. Check your installation."
+  else
+    for skill in $SKILLS_TO_COPY; do
+      SRC="${SKILLS_SRC}/${skill}"
+      DEST="${TARGET}/.claude/skills/${skill}"
+      if [[ ! -d "$SRC" ]]; then
+        warn "Skill not found, skipping: $skill ($SRC)"
+        continue
+      fi
+      if $DRY_RUN; then
+        echo "  [skill] .claude/skills/${skill}/"
+      else
+        mkdir -p "$(dirname "$DEST")"
+        cp -r "$SRC" "$DEST"
+      fi
+    done
+  fi
+fi
 
 # ── done ─────────────────────────────────────────────────────────────────────
 if $DRY_RUN; then

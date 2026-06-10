@@ -1,8 +1,0 @@
-name: claude-projects
-jira_key: ""
-created: 2026-05-13
-repos: []
-tasks:
-  - key: living-status-journal
-    summary: Add STATUS.md, journal.yaml, lifecycle frontmatter, /sync-status and /journal skills to the scaffold
-    status: done
