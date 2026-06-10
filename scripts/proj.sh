@@ -365,6 +365,7 @@ if $COPY_SKILLS; then
     warn "Skills will not be copied. Check your installation."
   else
     JOURNAL_HOOKS_NEEDED=false
+    SYNC_STATUS_HOOKS_NEEDED=false
     for skill in $SKILLS_TO_COPY; do
       SRC="${SKILLS_SRC}/${skill}"
       DEST="${TARGET}/.claude/skills/${skill}"
@@ -374,49 +375,51 @@ if $COPY_SKILLS; then
       fi
       if $DRY_RUN; then
         echo "  [skill] .claude/skills/${skill}/"
-        [[ "$skill" == "journal" ]] && echo "  [file] .claude/settings.json  (journal hooks)"
       else
         mkdir -p "$(dirname "$DEST")"
         cp -r "$SRC" "$DEST"
-        [[ "$skill" == "journal" ]] && JOURNAL_HOOKS_NEEDED=true
+        [[ "$skill" == "journal"      ]] && JOURNAL_HOOKS_NEEDED=true
+        [[ "$skill" == "sync-status"  ]] && SYNC_STATUS_HOOKS_NEEDED=true
       fi
     done
 
-    # Wire journal hooks into .claude/settings.json when journal skill is present
-    if $JOURNAL_HOOKS_NEEDED; then
-      write_file "$TARGET/.claude/settings.json" "$(cat << 'EOF'
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/skills/journal/hooks/journal-check.sh",
-            "asyncRewake": true,
-            "rewakeSummary": "Journal entry may be needed"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/skills/journal/hooks/journal-stop.sh",
-            "asyncRewake": true,
-            "rewakeSummary": "Unlogged journal events detected"
-          }
-        ]
-      }
-    ]
-  }
-}
-EOF
-      )"
+    # Build .claude/settings.json from whichever hook-bearing skills were copied
+    if $JOURNAL_HOOKS_NEEDED || $SYNC_STATUS_HOOKS_NEEDED; then
+      if $DRY_RUN; then
+        echo "  [file] .claude/settings.json  (skill hooks)"
+      else
+        # Compose the Stop hooks array based on which skills are present
+        STOP_HOOKS="[]"
+        if $JOURNAL_HOOKS_NEEDED; then
+          STOP_HOOKS=$(echo "$STOP_HOOKS" | jq '. + [{"type":"command","command":"bash .claude/skills/journal/hooks/journal-stop.sh","asyncRewake":true,"rewakeSummary":"Unlogged journal events detected"}]')
+        fi
+        if $SYNC_STATUS_HOOKS_NEEDED; then
+          STOP_HOOKS=$(echo "$STOP_HOOKS" | jq '. + [{"type":"command","command":"bash .claude/skills/sync-status/hooks/sync-status-stop.sh","asyncRewake":true,"rewakeSummary":"STATUS.md is out of date"}]')
+        fi
+
+        SETTINGS=$(jq -n \
+          --argjson stopHooks "$STOP_HOOKS" \
+          --argjson journalHooks "$JOURNAL_HOOKS_NEEDED" \
+          '{
+            hooks: {
+              Stop: [{ matcher: "", hooks: $stopHooks }]
+            }
+          } |
+          if $journalHooks then
+            .hooks.PostToolUse = [{
+              matcher: "Write|Edit",
+              hooks: [{
+                type: "command",
+                command: "bash .claude/skills/journal/hooks/journal-check.sh",
+                asyncRewake: true,
+                rewakeSummary: "Journal entry may be needed"
+              }]
+            }]
+          else . end')
+
+        mkdir -p "$TARGET/.claude"
+        printf '%s\n' "$SETTINGS" > "$TARGET/.claude/settings.json"
+      fi
     fi
   fi
 fi
