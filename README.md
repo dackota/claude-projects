@@ -4,7 +4,7 @@ Scaffolding and conventions for Claude Code project workspaces.
 
 ## What this is
 
-Each project workspace is a directory that Claude Code uses as context for a focused body of work — a feature, migration, investigation, etc. This repo defines the structure those workspaces follow and provides a CLI to create them.
+Each project workspace is a directory that Claude Code uses as context for a focused body of work — a feature, migration, investigation, etc. This repo defines the structure those workspaces follow, provides a CLI to create them, and ships a set of skills that keep Claude oriented across sessions.
 
 ## Usage
 
@@ -44,7 +44,8 @@ proj spike --skills tdd,grill-me
 ├── project.yaml               # source of truth: repos, tasks, Jira keys
 ├── .gitignore                 # excludes repos/ and worktrees/
 ├── .claude/
-│   └── skills/                # populated when --skills is passed
+│   ├── skills/                # populated when --skills is passed
+│   └── settings.json          # hook wiring (created when journal/sync-status skills copied)
 ├── docs/
 │   ├── plans/                 # implementation plans
 │   ├── decisions/             # lightweight decision records
@@ -113,28 +114,108 @@ task: null
 
 Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink any skill globally for use across all projects.
 
-| Skill | Purpose |
-|-------|---------|
-| `sync-status` | Regenerate `STATUS.md` from project state |
-| `journal` | Append a typed entry to `journal.yaml` |
-| `grill-me` | Relentless design interview, one question at a time |
-| `to-prd` | Synthesize conversation context into a PRD |
-| `to-issues` | Break a plan into tracer-bullet vertical-slice issues |
-| `tdd` | Test-driven development red-green-refactor loop |
-
-### /sync-status
-
-Regenerates `STATUS.md` from all authoritative inputs. Claude invokes it automatically when a significant change occurs AND a natural pause arrives (handing back to the user, finishing a work block). You can also invoke it manually.
+When the `journal` or `sync-status` skills are copied, `proj` also creates `.claude/settings.json` with `asyncRewake` hooks that automatically prompt Claude to log events and keep `STATUS.md` current.
 
 ### /journal
 
-Appends a single typed entry to `journal.yaml`.
+Appends a single typed entry to `journal.yaml`. Use it immediately when something significant happens: a decision is made, a plan changes, a task starts or finishes, a blocker is hit.
 
 ```
 /journal <type> "<summary>"
-/journal decision "Switched mas to consumer-subchart pattern."
-/journal done "DEVOPS-1521 PR #829 merged and sbx-validated."
+
+/journal decision "Switched to consumer-subchart pattern for chart extraction."
+/journal started  "Beginning DEVOPS-1521 — extract aidp-gateway subchart."
+/journal done     "DEVOPS-1521 PR #829 merged and sbx-validated."
+/journal blocker  "ECR push failing — OIDC role missing ecr:GetAuthorizationToken."
+/journal pr       "PR #831 opened for aidp-core extraction."
 ```
+
+Valid types: `decision` · `plan` · `started` · `done` · `blocker` · `supersession` · `research` · `pr`
+
+**Hooks:** a `PostToolUse` hook fires when `project.yaml` or any `docs/decisions/`, `docs/plans/`, or `docs/research/` file is written, nudging Claude to write the corresponding entry. A `Stop` hook fires if `docs/` files were modified since the last journal entry.
+
+### /sync-status
+
+Regenerates `STATUS.md` from all authoritative inputs — `PROJECT.md`, `project.yaml`, `journal.yaml`, and every `status: active` doc in `docs/`. Run it (or let Claude invoke it automatically) at the end of any session where meaningful work happened.
+
+**Hook:** a `Stop` hook fires when `journal.yaml` is newer than `STATUS.md`, prompting Claude to sync before the session ends.
+
+### /grill-me
+
+Interviews you relentlessly about a plan or design — one question at a time, working through every branch of the decision tree. Use it to stress-test an idea before committing to a plan doc. Claude answers each question with a recommendation, so the interview also surfaces Claude's assumptions for you to correct.
+
+```
+/grill-me
+```
+
+Invoke it when you have a rough idea and want to find the holes before writing a plan. The output of a grilling session is the raw material for `/to-prd`.
+
+### /to-prd
+
+Synthesizes everything in the current conversation into a structured PRD without interviewing you further — it just writes. The PRD covers the problem statement, solution, an extensive list of user stories, implementation decisions, testing decisions, and out-of-scope items.
+
+```
+/to-prd
+```
+
+Use it after `/grill-me` has resolved the major open questions, or any time the conversation contains enough context to write a spec.
+
+### /to-issues
+
+Breaks a plan or PRD into independently-grabbable vertical-slice issues. Each issue cuts end-to-end through all layers (schema, API, UI, tests) and is either HITL (requires human input) or AFK (can be implemented and merged autonomously). Presents the breakdown for your review before publishing to the issue tracker.
+
+```
+/to-issues
+/to-issues <issue-number>   # start from an existing tracker issue
+```
+
+Use it after `/to-prd` to turn the spec into a concrete backlog.
+
+### /tdd
+
+Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. Before writing any code, confirms the interface design and which behaviors matter most. Enforces testing through public interfaces only, not implementation details.
+
+```
+/tdd
+```
+
+Use it when starting implementation of any issue produced by `/to-issues`.
+
+---
+
+## Typical workflow
+
+These skills compose into a repeatable process from idea to shipped code.
+
+### 1. Explore the idea — `/grill-me`
+
+Start a session with a rough idea. Run `/grill-me` and let Claude interview you until every major design branch is resolved. Push back on Claude's recommendations where you disagree — those disagreements become the interesting decisions.
+
+### 2. Write the spec — `/to-prd`
+
+Once the grilling session has surfaced and resolved the key questions, run `/to-prd`. Claude synthesizes the conversation into a full PRD and publishes it to the issue tracker. No additional input needed.
+
+### 3. Break it into issues — `/to-issues`
+
+Run `/to-issues` (or `/to-issues <prd-issue>`) to decompose the PRD into vertical-slice issues. Review the proposed breakdown — adjust granularity, flag any wrong HITL/AFK calls, correct dependency ordering — then approve. Claude publishes them in dependency order.
+
+### 4. Implement each issue — `/tdd`
+
+Pick an issue and run `/tdd`. Claude confirms the public interface and which behaviors to test, then works through the implementation one test at a time. Each cycle: write a failing test, write minimal code to pass it, refactor.
+
+### 5. Log events as they happen — `/journal`
+
+Throughout any session, significant events get logged immediately: decisions made mid-implementation, task status flips in `project.yaml`, PRs opened or merged, blockers hit. The `PostToolUse` hook catches most file-write events automatically; use `/journal` directly for anything else.
+
+### 6. Sync the status view — `/sync-status`
+
+At the end of any session where meaningful work happened, `/sync-status` regenerates `STATUS.md` from the full current state. The `Stop` hook fires automatically if `journal.yaml` is newer than `STATUS.md`, so this rarely needs to be invoked manually.
+
+### 7. Resume the next session
+
+Every new session starts with Claude reading `STATUS.md` — a dense ~500-token synthesis of where the project is, what's active, what's blocked, and what comes next. No re-orientation cost.
+
+---
 
 ## Install
 
@@ -163,7 +244,7 @@ ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
 **Skills — per-project copies (via proj)**
 
 ```bash
-proj my-project --skills            # copy all skills
+proj my-project --skills            # copy all skills + wire hooks
 proj my-project --skills tdd,grill-me  # copy a subset
 ```
 
