@@ -18,6 +18,7 @@ proj <project-name> [options]
 |------|-------------|
 | `--dir <path>` | Base directory (default: current directory) |
 | `--jira <KEY>` | Jira project key, e.g. `AIDP` |
+| `--skills [LIST]` | Copy skills into `.claude/skills/` in the new project. `LIST` is an optional comma-separated subset. Omit to copy all bundled skills. |
 | `--dry-run` | Print what would be created without writing anything |
 | `--force` | Overwrite if target directory already exists |
 | `--show-claude-md` | Print the embedded CLAUDE.md template to stdout |
@@ -28,7 +29,8 @@ proj <project-name> [options]
 ```bash
 proj my-feature-work
 proj aidp-migration --dir ~/Documents/repos --jira AIDP
-proj big-refactor --dry-run
+proj big-refactor --skills --dry-run
+proj spike --skills tdd,grill-me
 ```
 
 ## Scaffolded structure
@@ -41,6 +43,8 @@ proj big-refactor --dry-run
 ├── journal.yaml               # append-only structured event log
 ├── project.yaml               # source of truth: repos, tasks, Jira keys
 ├── .gitignore                 # excludes repos/ and worktrees/
+├── .claude/
+│   └── skills/                # populated when --skills is passed
 ├── docs/
 │   ├── plans/                 # implementation plans
 │   ├── decisions/             # lightweight decision records
@@ -107,7 +111,16 @@ task: null
 
 ## Skills
 
-Two project skills live in `skills/` and must be symlinked into `~/.claude/skills/` once per machine.
+Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink any skill globally for use across all projects.
+
+| Skill | Purpose |
+|-------|---------|
+| `sync-status` | Regenerate `STATUS.md` from project state |
+| `journal` | Append a typed entry to `journal.yaml` |
+| `grill-me` | Relentless design interview, one question at a time |
+| `to-prd` | Synthesize conversation context into a PRD |
+| `to-issues` | Break a plan into tracer-bullet vertical-slice issues |
+| `tdd` | Test-driven development red-green-refactor loop |
 
 ### /sync-status
 
@@ -135,12 +148,23 @@ ln -s /path/to/claude-projects/scripts/proj.sh /usr/local/bin/proj
 export PATH="$PATH:/path/to/claude-projects/scripts"
 ```
 
-**Skills (one-time per machine)**
+**Skills — global symlinks (one-time per machine)**
 
 ```bash
 cd /path/to/claude-projects
 ln -s "$(pwd)/skills/sync-status" ~/.claude/skills/sync-status
 ln -s "$(pwd)/skills/journal"     ~/.claude/skills/journal
+ln -s "$(pwd)/skills/grill-me"    ~/.claude/skills/grill-me
+ln -s "$(pwd)/skills/to-prd"      ~/.claude/skills/to-prd
+ln -s "$(pwd)/skills/to-issues"   ~/.claude/skills/to-issues
+ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
+```
+
+**Skills — per-project copies (via proj)**
+
+```bash
+proj my-project --skills            # copy all skills
+proj my-project --skills tdd,grill-me  # copy a subset
 ```
 
 ## Tests
