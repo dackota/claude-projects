@@ -129,6 +129,8 @@ proj spike --skills tdd,grill-me
 
 ## Living status system
 
+> Inspired by [Give Your AI Unlimited, Updated Context](https://towardsdatascience.com/give-your-ai-unlimited-updated-context/) — the idea that an LLM-optimized current-state document eliminates the re-orientation cost at the start of every session.
+
 Each workspace carries two control files that keep Claude oriented across sessions.
 
 ### STATUS.md
