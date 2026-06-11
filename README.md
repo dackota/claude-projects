@@ -58,7 +58,7 @@ From there, use the skills as you work. They compose into a natural flow:
 
 ## What this is
 
-Each project workspace is a directory that Claude Code uses as context for a focused body of work — a feature, migration, investigation, etc. This repo defines the structure those workspaces follow, provides a CLI to create them, and ships a set of skills that keep Claude oriented across sessions. Also includes a set of commonly used and useful skills plus a living curated knowledge store to keep Claude on top of project status, decisions, plans, etc.
+Each project workspace is a directory that Claude Code uses as context for a large body of work — a feature, migration, investigation, etc. that benefits from having context on multiple sources (repos, plans, etc). This tool defines the structure those workspaces follow, provides a CLI to create them, and ships a set of commonly used and useful skills plus a living curated knowledge store that keeps Claude oriented across sessions.
 
 ## When to use it
 
