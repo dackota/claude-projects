@@ -46,12 +46,12 @@ claude
 From there, use the skills as you work. They compose into a natural flow:
 
 ```
-/grill-me      ← stress-test the idea
-/to-prd        ← write the spec
-/to-issues     ← break it into tickets
-/tdd           ← implement each ticket
-/journal       ← log events as they happen (also fires automatically)
-/sync-status   ← update STATUS.md at session end (also fires automatically)
+/grill-me      ← First session have Claude grill you relentlessly untill you both have a shared understanding of the project
+/to-prd        ← takes the project design you decided on with the grill-me skill and converts it into a project requirements doc to capture the desired behaviours
+/to-issues     ← Breaks the PRD into vertical slices of work conviently labels them as AFK or HITL so Claude/you know when it can work on its own and when a human is needed
+/tdd           ← Use Test Driven Development to work on each issue. The Red-green-refactor process creates a loop that continues until complete.
+/journal       ← (Passive) Claude records important pieces of info like decisions, issue status, etc automatically. /journal can also be called to force an entry
+/sync-status   ← (Passive) When new plans/docs/etc are found, STATUS.md is updated to keep Claude focused on only the current relevant info
 ```
 
 ---
