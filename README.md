@@ -8,7 +8,7 @@ Scaffolding and conventions for Claude Code project workspaces.
 git clone git@github.com:dackota/claude-projects.git ~/Documents/repos/claude-projects
 cd ~/Documents/repos/claude-projects
 
-# Make proj available on your PATH
+# Optionally make proj available on your PATH
 ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj
 ```
 
@@ -32,15 +32,15 @@ ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
 
 ```bash
 # Scaffold a new workspace with all skills and auto-wired hooks
-proj my-feature --skills
+proj my-project --skills
 
-cd my-feature
+cd my-project
 
-# Fill in your goal
+# Fill in your goal of the project
 $EDITOR PROJECT.md
 
 # Start a session — Claude reads STATUS.md first for context
-claude .
+claude
 ```
 
 From there, use the skills as you work. They compose into a natural flow:
