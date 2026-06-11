@@ -262,7 +262,7 @@ These skills compose into a repeatable process from idea to shipped code.
 
 ### 1. Explore the idea — `/grill-me`
 
-Start a session with a rough idea. Run `/grill-me` and let Claude interview you until every major design branch is resolved. Push back on Claude's recommendations where you disagree — those disagreements become the interesting decisions.
+Start a session with a rough idea. Run `/grill-me` and let Claude interview you until every major design branch is resolved.
 
 ### 2. Write the spec — `/to-prd`
 
@@ -286,12 +286,5 @@ At the end of any session where meaningful work happened, `/sync-status` regener
 
 ### 7. Resume the next session
 
-Every new session starts with Claude reading `STATUS.md` — a dense ~500-token synthesis of where the project is, what's active, what's blocked, and what comes next. No re-orientation cost.
+Every new session starts with Claude reading `STATUS.md` — a ~500-token synthesis of where the project is, what's active, what's blocked, and what comes next. No re-orientation cost.
 
----
-
-## Tests
-
-```bash
-bash scripts/test-proj.sh
-```
