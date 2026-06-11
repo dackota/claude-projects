@@ -8,7 +8,7 @@ Scaffolding and conventions for Claude Code project workspaces.
 git clone git@github.com:dackota/claude-projects.git ~/Documents/repos/claude-projects
 cd ~/Documents/repos/claude-projects
 
-# Make proj available on your PATH
+# Optionally make proj available on your PATH
 ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj
 ```
 
@@ -32,33 +32,33 @@ ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
 
 ```bash
 # Scaffold a new workspace with all skills and auto-wired hooks
-proj my-feature --skills
+proj my-project --skills
 
-cd my-feature
+cd my-project
 
-# Fill in your goal
+# Fill in your goal of the project
 $EDITOR PROJECT.md
 
 # Start a session — Claude reads STATUS.md first for context
-claude .
+claude
 ```
 
 From there, use the skills as you work. They compose into a natural flow:
 
 ```
-/grill-me      ← stress-test the idea
-/to-prd        ← write the spec
-/to-issues     ← break it into tickets
-/tdd           ← implement each ticket
-/journal       ← log events as they happen (also fires automatically)
-/sync-status   ← update STATUS.md at session end (also fires automatically)
+/grill-me      ← First session have Claude grill you relentlessly untill you both have a shared understanding of the project
+/to-prd        ← Takes the project design you decided on with the grill-me skill and converts it into a project requirements doc to capture the desired behaviours
+/to-issues     ← Breaks the PRD into vertical slices of work and conviently labels them as AFK or HITL so Claude/you know when it can work on its own and when a human is needed
+/tdd           ← Use Test Driven Development to work on each issue. The Red-green-refactor process creates a loop makes Claude work until its complete
+/journal       ← (Passive) Claude records important pieces of info like decisions, issue status, etc automatically. /journal can also be called to force an entry
+/sync-status   ← (Passive) When new plans/docs/etc are found, STATUS.md is updated to keep Claude focused on only the current relevant info
 ```
 
 ---
 
 ## What this is
 
-Each project workspace is a directory that Claude Code uses as context for a focused body of work — a feature, migration, investigation, etc. This repo defines the structure those workspaces follow, provides a CLI to create them, and ships a set of skills that keep Claude oriented across sessions. Also includes a set of commonly used and useful skills plus a living curated knowledge store to keep Claude on top of project status, decisions, plans, etc.
+Each project workspace is a directory that Claude Code uses as context for a large body of work — a feature, migration, investigation, etc. that benefits from having context on multiple sources (repos, plans, etc). This tool defines the structure those workspaces follow, provides a CLI to create them, and ships a set of commonly used and useful skills plus a living curated knowledge store that keeps Claude oriented across sessions.
 
 ## When to use it
 
@@ -262,7 +262,7 @@ These skills compose into a repeatable process from idea to shipped code.
 
 ### 1. Explore the idea — `/grill-me`
 
-Start a session with a rough idea. Run `/grill-me` and let Claude interview you until every major design branch is resolved. Push back on Claude's recommendations where you disagree — those disagreements become the interesting decisions.
+Start a session with a rough idea. Run `/grill-me` and let Claude interview you until every major design branch is resolved.
 
 ### 2. Write the spec — `/to-prd`
 
@@ -286,12 +286,5 @@ At the end of any session where meaningful work happened, `/sync-status` regener
 
 ### 7. Resume the next session
 
-Every new session starts with Claude reading `STATUS.md` — a dense ~500-token synthesis of where the project is, what's active, what's blocked, and what comes next. No re-orientation cost.
+Every new session starts with Claude reading `STATUS.md` — a ~500-token synthesis of where the project is, what's active, what's blocked, and what comes next. No re-orientation cost.
 
----
-
-## Tests
-
-```bash
-bash scripts/test-proj.sh
-```
