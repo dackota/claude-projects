@@ -213,6 +213,8 @@ Regenerates `STATUS.md` from all authoritative inputs — `PROJECT.md`, `project
 
 **Hook:** a `Stop` hook fires when `journal.yaml` is newer than `STATUS.md`, prompting Claude to sync before the session ends.
 
+> The `/grill-me`, `/to-prd`, `/to-issues`, and `/tdd` skills are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering).
+
 ### /grill-me
 
 Interviews you relentlessly about a plan or design — one question at a time, working through every branch of the decision tree. Use it to stress-test an idea before committing to a plan doc. Claude answers each question with a recommendation, so the interview also surfaces Claude's assumptions for you to correct.
