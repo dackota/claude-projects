@@ -14,20 +14,6 @@ ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj
 
 Skills are **project-local by default** — `proj --skills` copies them into each workspace's `.claude/skills/` and wires the hooks automatically. Nothing else needed.
 
-**Optional: make skills available globally** across all projects (not just ones scaffolded with `proj`):
-
-```bash
-cd ~/Documents/repos/claude-projects
-ln -s "$(pwd)/skills/sync-status" ~/.claude/skills/sync-status
-ln -s "$(pwd)/skills/journal"     ~/.claude/skills/journal
-ln -s "$(pwd)/skills/grill-with-docs" ~/.claude/skills/grill-with-docs
-ln -s "$(pwd)/skills/to-prd"      ~/.claude/skills/to-prd
-ln -s "$(pwd)/skills/to-issues"   ~/.claude/skills/to-issues
-ln -s "$(pwd)/skills/tdd"         ~/.claude/skills/tdd
-```
-
-> **Note:** If you install skills both globally and per-project, hooks will fire twice. Pick one approach per machine.
-
 ## Quick start
 
 ```bash
