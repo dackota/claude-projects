@@ -189,9 +189,8 @@ session. File names MUST use dash-separated words. For all Markdown files in
 
 - Decision records are used to capture decisions made while building or
   executing a plan. These are lightweight decisions that will guide future tasks
-  of the plan or project. Decisions may be turned into Architectural Decision
-  Records (ADR) at some point in the future at my discretion. Store these in
-  `docs/decisions/`.
+  of the plan or project. Store these in `docs/decisions/`.  Decisions may be
+  turned into Architectural Decision Records (ADR) at some point in the future.
 
 - Research documents are used to store in-depth information about a topic or
   work item. The research may be referenced by multiple plans. Store these in
@@ -201,9 +200,9 @@ session. File names MUST use dash-separated words. For all Markdown files in
 - Validation documents are used to prove that a plan was successfully
   completed. When I ask you to validate that the plan was completed you will
   review the plan, gather evidence of completed work, and create a validation
-  document. This MUST include tangible and auditable examples such as file paths
-  and lines `path/to/file.ext:34` or the output summary of a successful test run.
-  Store these documents in `docs/validations/`.
+  document. This MUST include tangible and auditable examples such as commands run,
+  or file paths and lines `path/to/file.ext:34` or the output summary of a 
+  successful test run. Store these documents in `docs/validations/`.
 
 - Scripts for complex or repeatable work items. When you need to do something
   that is more complex due to the number of commands or the amount of logic
@@ -214,7 +213,7 @@ session. File names MUST use dash-separated words. For all Markdown files in
 
 - Repos is a directory that stores repositories needed by this project. These
   repositories may be needed for research or changes in order to complete the
-  project. Clone the required repos here. Every time a repo is used for any 
+  project. Clone the required repos here. Every time a repo is used for any
   task it must be updated first so its always the latest.
 
 - Worktrees is a directory that stores git worktrees needed by this project.
