@@ -3,15 +3,23 @@
 #
 # Usage:
 #   proj <project-name> [options]
+#   proj update-skills [<project-name>] [options]
+#
+# Subcommands:
+#   update-skills      Sync already-installed skills from the source to pick up
+#                      latest changes. <project-name> is optional; when omitted,
+#                      the current directory (or --dir) is treated as the project root.
+#                      Only skills already present in .claude/skills/ are updated.
+#                      Pass --skills LIST to restrict which skills are updated.
 #
 # Options:
-#   --dir <path>       Base directory to create project in (default: current directory)
-#   --jira <KEY>       Jira project key (e.g. AIDP)
+#   --dir <path>       Base directory for the project (default: current directory)
+#   --jira <KEY>       Jira project key (e.g. AIDP)  [scaffold only]
 #   --skills [LIST]    Copy skills into .claude/skills/ in the new project.
 #                      LIST is an optional comma-separated subset (e.g. tdd,grill-me).
-#                      Omit LIST to copy all bundled skills: grill-me, to-prd, to-issues, tdd.
-#   --dry-run          Print what would be created; write nothing
-#   --force            Overwrite if target directory already exists
+#                      Omit LIST to copy all skills found in the skills/ directory.
+#   --dry-run          Print what would be created/updated; write nothing
+#   --force            Overwrite if target directory already exists  [scaffold only]
 #   --show-claude-md   Print the embedded CLAUDE.md to stdout and exit
 #   -h, --help         Show this help
 #
@@ -29,8 +37,7 @@ FORCE=false
 PROJECT_NAME=""
 COPY_SKILLS=false
 SKILLS_LIST=""  # empty = all bundled skills
-
-ALL_BUNDLED_SKILLS="grill-me to-prd to-issues tdd"
+SUBCOMMAND=""
 
 # Resolve script's real directory (handles symlinks on macOS)
 _SCRIPT="${BASH_SOURCE[0]}"
@@ -244,15 +251,88 @@ while [[ $# -gt 0 ]]; do
       fi
       shift ;;
     -*)                die "Unknown option: $1" ;;
+    update-skills)
+      [[ -n "$SUBCOMMAND" ]] && die "Unexpected argument: $1"
+      SUBCOMMAND="update-skills"; shift ;;
     *)
       [[ -n "$PROJECT_NAME" ]] && die "Unexpected argument: $1 (project name already set to '${PROJECT_NAME}')"
       PROJECT_NAME="$1"; shift ;;
   esac
 done
 
+TODAY=$(date +%Y-%m-%d)
+
+# ── subcommand: update-skills ─────────────────────────────────────────────────
+if [[ "$SUBCOMMAND" == "update-skills" ]]; then
+  if [[ -n "$PROJECT_NAME" ]]; then
+    TARGET="${BASE_DIR}/${PROJECT_NAME}"
+  else
+    TARGET="$BASE_DIR"
+  fi
+
+  SKILLS_DEST="${TARGET}/.claude/skills"
+
+  [[ ! -d "$TARGET"      ]] && die "Project directory not found: $TARGET"
+  [[ ! -d "$SKILLS_DEST" ]] && die "No .claude/skills/ found in: $TARGET\n       Run 'proj <name> --skills' first to install skills."
+  [[ ! -d "$SKILLS_SRC"  ]] && die "Skills source directory not found: $SKILLS_SRC\n       Check your installation."
+
+  # Default: update every skill already installed in the project
+  if [[ -n "$SKILLS_LIST" ]]; then
+    SKILLS_TO_UPDATE="$SKILLS_LIST"
+  else
+    SKILLS_TO_UPDATE="$(ls -1 "$SKILLS_DEST" 2>/dev/null | tr '\n' ' ')"
+  fi
+
+  if [[ -z "${SKILLS_TO_UPDATE// /}" ]]; then
+    warn "No skills found in: $SKILLS_DEST"
+    exit 0
+  fi
+
+  if $DRY_RUN; then
+    info "Dry run — nothing will be written."
+    echo ""
+    echo "Would update skills in: $TARGET"
+  fi
+
+  UPDATED=0
+  SKIPPED=0
+  for skill in $SKILLS_TO_UPDATE; do
+    SRC="${SKILLS_SRC}/${skill}"
+    DEST="${SKILLS_DEST}/${skill}"
+
+    if [[ ! -d "$SRC" ]]; then
+      warn "Not in source, skipping: ${skill}"
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+    if [[ ! -d "$DEST" ]]; then
+      warn "Not installed in project, skipping: ${skill}  (use --skills ${skill} to install)"
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+
+    if $DRY_RUN; then
+      echo "  [update] .claude/skills/${skill}/"
+    else
+      rm -rf "$DEST"
+      cp -r "$SRC" "$DEST"
+      UPDATED=$((UPDATED + 1))
+    fi
+  done
+
+  echo ""
+  if $DRY_RUN; then
+    info "Dry run complete. Re-run without --dry-run to update."
+  else
+    info "Updated ${UPDATED} skill(s) in: $TARGET"
+    [[ $SKIPPED -gt 0 ]] && warn "Skipped ${SKIPPED} skill(s) — see warnings above."
+  fi
+  exit 0
+fi
+
+# ── scaffold (default subcommand) ─────────────────────────────────────────────
 [[ -z "$PROJECT_NAME" ]] && die "Usage: proj <project-name> [options]\n       Run with --help for full usage."
 
-TODAY=$(date +%Y-%m-%d)
 TARGET="${BASE_DIR}/${PROJECT_NAME}"
 
 # ── pre-flight ────────────────────────────────────────────────────────────────
@@ -357,7 +437,11 @@ write_file "$TARGET/journal.yaml" "[]"
 
 # ── skills ───────────────────────────────────────────────────────────────────
 if $COPY_SKILLS; then
-  SKILLS_TO_COPY="${SKILLS_LIST:-$ALL_BUNDLED_SKILLS}"
+  if [[ -n "$SKILLS_LIST" ]]; then
+    SKILLS_TO_COPY="$SKILLS_LIST"
+  else
+    SKILLS_TO_COPY="$(ls -1 "$SKILLS_SRC" 2>/dev/null | tr '\n' ' ')"
+  fi
 
   if [[ ! -d "$SKILLS_SRC" ]]; then
     warn "--skills requested but skills directory not found: $SKILLS_SRC"
