@@ -16,7 +16,7 @@
 #   --dir <path>       Base directory for the project (default: current directory)
 #   --jira <KEY>       Jira project key (e.g. AIDP)  [scaffold only]
 #   --skills [LIST]    Copy skills into .claude/skills/ in the new project.
-#                      LIST is an optional comma-separated subset (e.g. tdd,grill-me).
+#                      LIST is an optional comma-separated subset (e.g. tdd,grill-with-docs).
 #                      Omit LIST to copy all skills found in the skills/ directory.
 #   --dry-run          Print what would be created/updated; write nothing
 #   --force            Overwrite if target directory already exists  [scaffold only]
@@ -67,7 +67,9 @@ claude_md_content() {
 cat << 'CLAUDE_MD_EOF'
 # Project Structure
 
-See `PROJECT.md` for what this project is trying to accomplish.
+See `PROJECT.md` for what this project is trying to accomplish. A **project** is
+the body of work and its goal (the *why*); this **workspace** is the directory
+that holds it (the *where*).
 
 ## Session Start
 
@@ -77,14 +79,15 @@ Read `STATUS.md` first every session before opening any other file. It is a
 
 ## Project Structure
 
-- `project.yaml` - source of truth: repos, tasks, Jira keys, and config
+- `project.yaml` - source of truth: repos, tasks, Jira key, and config
 - `PROJECT.md` - project goals and context (read this for the why)
 - `STATUS.md` - LLM-first current-state synthesis; READ THIS FIRST every session
+- `CONTEXT.md` - domain glossary; the canonical term for each concept
 - `journal.yaml` - append-only structured event log; never rewrite, only append
 - `CLAUDE.md` - this file
 - `docs/` - directory to store project documentation
-- `docs/plans/` - directory to store planning documents
-- `docs/decisions/` - directory to store decision records
+- `docs/plans/` - planning documents (and local PRDs when not using a tracker)
+- `docs/adr/` - architectural decision records (the why behind hard decisions)
 - `docs/research/` - directory to store research and analysis documents
 - `docs/validations/` - directory to store validation documents
 - `scripts/` - directory to contain one-off scripts used in the project but not
@@ -92,14 +95,36 @@ Read `STATUS.md` first every session before opening any other file. It is a
 - `repos/` - directory containing cloned repos
 - `worktrees/` - directory containing git worktrees associated with tasks
 
-Code repos and worktrees are cloned inside the project directory but are
-`.gitignored`-excluded; they are tracked via `project.yaml`, not committed here.
+Code repos and worktrees are cloned inside the workspace but are
+`.gitignore`-excluded; they are tracked via `project.yaml`, not committed here.
 Read `project.yaml` to see what repos and tasks exist.
+
+## CONTEXT.md — domain glossary
+
+`CONTEXT.md` is the project's glossary: the canonical name for each domain
+concept, with synonyms to steer away from. Use its vocabulary in plans, ADRs,
+issues, tests, and commits so language stays consistent across sessions. It is a
+glossary and nothing else — no implementation details, no general programming
+concepts. `/grill-with-docs` maintains it as terms are resolved.
+
+## docs/adr/ — Architectural Decision Records
+
+An ADR records a decision and the reasoning behind it. Write one only when all
+three hold:
+
+1. **Hard to reverse** — the cost of changing your mind later is meaningful.
+2. **Surprising without context** — a future reader will wonder "why this way?"
+3. **The result of a real trade-off** — there were genuine alternatives.
+
+If any is missing, skip the ADR — the journal `decision` line already records
+that the decision happened. ADRs use sequential numbering (`0001-slug.md`) and
+can be a single paragraph. ADRs and `CONTEXT.md` are exempt from the lifecycle
+frontmatter below and from the `/sync-status` active-doc scan.
 
 ## Lifecycle Frontmatter
 
-Every doc in `docs/plans/`, `docs/decisions/`, `docs/research/`, and
-`docs/validations/` MUST carry this frontmatter:
+Every doc in `docs/plans/`, `docs/research/`, and `docs/validations/` MUST carry
+this frontmatter (ADRs and `CONTEXT.md` are exempt — see above):
 
 ```yaml
 ---
@@ -110,7 +135,7 @@ status: active            # active | superseded | done | abandoned
 supersedes: []            # paths to docs this replaces
 superseded_by: null       # path to doc that replaced this
 related:                  # cross-references for navigation
-  - docs/decisions/foo.md
+  - docs/adr/0001-foo.md
 jira: null                # optional Jira issue key
 task: null                # optional task id from project.yaml
 ---
@@ -132,7 +157,7 @@ Append-only event log. Never edit existing entries. Entry schema:
   type: decision   # decision | plan | started | done | blocker | supersession | research | pr
   summary: <one or two sentences>
   refs:            # optional list of paths or external IDs
-    - docs/decisions/foo.md
+    - docs/adr/0001-foo.md
     - DEVOPS-1525
   jira: DEVOPS-1525  # optional
 ```
@@ -141,7 +166,7 @@ Append an entry immediately when:
 
 | Event                                    | type          |
 |------------------------------------------|---------------|
-| Decision made or reversed                | `decision`    |
+| Decision made or reversed                | `decision` (link the ADR if one was written) |
 | Plan finalized or revised                | `plan`        |
 | Task status flipped in `project.yaml`    | `started` / `done` |
 | Blocker hit                              | `blocker`     |
@@ -181,6 +206,36 @@ Valid types: `decision` | `plan` | `started` | `done` | `blocker` |
 
 Refuses to run if no `journal.yaml` is present in the working directory tree.
 
+## Issue tracker and tasks
+
+Where PRDs and vertical-slice issues go is driven by `project.yaml`:
+
+- **`jira_key` is set** → publish to Jira. PRDs get the `ready-for-agent` label.
+  Each issue gets an `afk` or `hitl` label mirroring its type, and
+  `ready-for-agent` is added to AFK issues only — never HITL.
+- **`jira_key` is empty** → keep work local. A PRD becomes
+  `docs/plans/<slug>-prd.md`; vertical-slice issues become `tasks` in
+  `project.yaml`.
+- Use GitHub Issues only when explicitly asked to.
+
+A **task** is a vertical slice tracked in `project.yaml`:
+
+```yaml
+tasks:
+  - id: extract-gateway-subchart   # stable kebab-case id (used in blocked_by)
+    title: Extract aidp-gateway subchart
+    type: AFK                      # AFK | HITL
+    status: todo                   # todo | active | done | blocked
+    blocked_by: []                 # list of task ids
+    plan: docs/plans/chart-split-prd.md   # source PRD/plan
+    jira: null                     # set when mirrored to a Jira issue
+```
+
+Status transitions drive the journal: `todo → active` writes a `started` entry,
+`active → done` writes a `done` entry, any → `blocked` writes a `blocker` entry.
+`/sync-status` reads `active` tasks for "Active work" and `blocked` for "Blocked
+/ open questions."
+
 ## Artifact Types
 
 All artifacts MUST BE written in Markdown unless otherwise mentioned during a
@@ -194,22 +249,24 @@ session. File names MUST use dash-separated words. For all Markdown files in
   Store these in `docs/plans/`. Use this directory when I say things like:
   "create a plan", "let's plan out", "I want to plan a", "plan it out".
 
-- Decision records are used to capture decisions made while building or
-  executing a plan. These are lightweight decisions that will guide future tasks
-  of the plan or project. Store these in `docs/decisions/`.  Decisions may be
-  turned into Architectural Decision Records (ADR) at some point in the future.
+- Architectural Decision Records (ADRs) capture the reasoning behind a decision
+  that is hard to reverse, surprising without context, and the result of a real
+  trade-off. Store these in `docs/adr/` using sequential numbering
+  (`0001-slug.md`). A lightweight decision that does not clear all three bars
+  needs only a `decision` line in `journal.yaml` — not a document.
 
 - Research documents are used to store in-depth information about a topic or
   work item. The research may be referenced by multiple plans. Store these in
   `docs/research/`. Use this directory when I say things like: "Research how X
   works". This can also be used when a plan requires in-depth research.
 
-- Validation documents are used to prove that a plan was successfully
-  completed. When I ask you to validate that the plan was completed you will
-  review the plan, gather evidence of completed work, and create a validation
-  document. This MUST include tangible and auditable examples such as commands run,
-  or file paths and lines `path/to/file.ext:34` or the output summary of a 
-  successful test run. Store these documents in `docs/validations/`.
+- Validation documents prove that a plan was successfully completed. Produce one
+  when a meaningful plan or milestone finishes (not every task) — or whenever I
+  ask you to validate — and reference it from the corresponding `done` entry in
+  `journal.yaml`. Review the plan, gather evidence of completed work, and create
+  the document. This MUST include tangible and auditable examples such as
+  commands run, file paths and lines `path/to/file.ext:34`, or the output summary
+  of a successful test run. Store these documents in `docs/validations/`.
 
 - Scripts for complex or repeatable work items. When you need to do something
   that is more complex due to the number of commands or the amount of logic
@@ -374,7 +431,7 @@ fi
 # ── scaffold ──────────────────────────────────────────────────────────────────
 make_dir "$TARGET"
 make_dir "$TARGET/docs/plans"
-make_dir "$TARGET/docs/decisions"
+make_dir "$TARGET/docs/adr"
 make_dir "$TARGET/docs/research"
 make_dir "$TARGET/docs/validations"
 make_dir "$TARGET/scripts"
@@ -417,6 +474,26 @@ created: ${TODAY}
 ## Context
 
 <!-- Background and motivation -->
+EOF
+)"
+
+# CONTEXT.md
+write_file "$TARGET/CONTEXT.md" "$(cat << EOF
+# ${PROJECT_NAME}
+
+<!-- One or two sentences: what this project's domain is and why it exists. -->
+
+## Language
+
+<!--
+Domain glossary. /grill-with-docs maintains this as terminology is resolved.
+Pick one canonical term per concept and list synonyms under _Avoid_.
+Glossary only — no implementation details, no general programming concepts.
+
+**Term**:
+One or two sentence definition of what it IS, not what it does.
+_Avoid_: synonyms to steer away from.
+-->
 EOF
 )"
 

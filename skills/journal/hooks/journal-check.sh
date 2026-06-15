@@ -11,17 +11,18 @@ fp=$(echo "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
 [[ -z "$fp" ]] && exit 0
 
 case "$fp" in
-  *project.yaml|*/docs/decisions/*|*/docs/plans/*|*/docs/research/*)
+  *project.yaml|*/docs/adr/*|*/docs/plans/*|*/docs/research/*|*/docs/validations/*)
     ;;
   *)
     exit 0
     ;;
 esac
 
-if   [[ "$fp" == */docs/decisions/* ]]; then entry_type="decision"
-elif [[ "$fp" == */docs/plans/*     ]]; then entry_type="plan"
-elif [[ "$fp" == */docs/research/*  ]]; then entry_type="research"
-else                                        entry_type="started/done/decision"
+if   [[ "$fp" == */docs/adr/*         ]]; then entry_type="decision"
+elif [[ "$fp" == */docs/plans/*       ]]; then entry_type="plan"
+elif [[ "$fp" == */docs/research/*    ]]; then entry_type="research"
+elif [[ "$fp" == */docs/validations/* ]]; then entry_type="done"
+else                                          entry_type="started/done/decision"
 fi
 
 echo "Wrote ${fp##*/} — write a /journal entry: type=${entry_type}, summary=\"<one sentence describing the change>\""

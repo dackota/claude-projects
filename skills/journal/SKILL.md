@@ -43,7 +43,7 @@ Rejects unknown types with a clear error listing the valid enum values.
   type: <type>
   summary: <summary text>
   refs:                   # omit if not provided
-    - docs/decisions/foo.md
+    - docs/adr/0001-foo.md
     - DEVOPS-1234
   jira: DEVOPS-1234       # omit if not provided
 ```

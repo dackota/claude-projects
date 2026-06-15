@@ -20,9 +20,9 @@ The conjunction is deliberate — do not sync after every individual doc edit, a
 ## Inputs read (in order)
 
 1. `PROJECT.md` — one-sentence goal extracted from the Goals section.
-2. `project.yaml` — task statuses, Jira keys, repo list.
+2. `project.yaml` — repo list, Jira key, and `tasks` (status `active` → "Active work", `blocked` → "Blocked / open questions").
 3. `journal.yaml` — all entries, most recent first for "Recent decisions".
-4. Frontmatter of every `docs/**/*.md` — to identify `status: active` docs.
+4. Frontmatter of every doc in `docs/plans/`, `docs/research/`, and `docs/validations/` — to identify `status: active` docs. `docs/adr/` and `CONTEXT.md` are NOT scanned here; decisions surface via the journal.
 5. Full body of every `status: active` doc — to synthesize current state and extract blockers/next moves.
 
 Non-`active` docs (superseded, done, abandoned) are skipped unless explicitly referenced by an active doc's `related` field.
@@ -53,7 +53,7 @@ last_synced: <ISO-8601 timestamp>
 - ...
 
 ## Recent decisions
-- <YYYY-MM-DD> — <summary> ([decision](docs/decisions/foo.md))
+- <YYYY-MM-DD> — <summary> ([adr](docs/adr/0001-foo.md))
 - ... (last 3–5 from journal.yaml with type: decision)
 
 ## Key facts

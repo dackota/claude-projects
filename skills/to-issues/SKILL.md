@@ -1,6 +1,6 @@
 ---
 name: to-issues
-description: Break a plan, spec, or PRD into independently-grabbable issues on the project issue tracker using tracer-bullet vertical slices. Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.
+description: Break a plan, spec, or PRD into independently-grabbable tracer-bullet vertical slices, published as Jira issues or local project.yaml tasks (routed by project.yaml jira_key). Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.
 origin: claude-projects
 ---
 
@@ -16,7 +16,7 @@ Work from whatever is already in the conversation context. If the user passes an
 
 ### 2. Explore the codebase (optional)
 
-If you have not already explored the codebase, do so to understand the current state of the code. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
+If you have not already explored the codebase, do so to understand the current state of the code. Issue titles and descriptions should use the vocabulary from `CONTEXT.md` (the project's domain glossary), and respect any ADRs in `docs/adr/` that touch the area you're working in.
 
 ### 3. Draft vertical slices
 
@@ -48,11 +48,15 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Publish the issues to the issue tracker
+### 5. Publish the approved slices
 
-For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. These issues are considered ready for AFK agents, so publish them with the correct triage label unless instructed otherwise.
+Where the slices land is driven by `project.yaml`:
 
-Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
+**`jira_key` is set → Jira.** Publish each slice as a Jira issue using the body template below. Label each issue `afk` or `hitl` to mirror its type, and add `ready-for-agent` to AFK issues **only** — never HITL, since a human must engage first. Publish in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
+
+**`jira_key` is empty → local `project.yaml` tasks.** Append each slice to the `tasks` list using the task schema below. Keep the full "What to build" and acceptance criteria in the source plan/PRD doc — the task entry stays a thin pointer (`type` is the AFK/HITL marker; no labels needed locally).
+
+Use GitHub Issues only when explicitly asked to.
 
 <issue-template>
 ## Parent
@@ -78,5 +82,17 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 Or "None - can start immediately" if no blockers.
 
 </issue-template>
+
+For the local path, append a thin task entry per slice:
+
+<task-schema>
+- id: <stable-kebab-id>            # referenced by other tasks' blocked_by
+  title: <slice title>
+  type: AFK                        # AFK | HITL
+  status: todo                     # todo | active | done | blocked
+  blocked_by: []                   # task ids that must finish first
+  plan: docs/plans/<slug>-prd.md   # the source PRD/plan
+  jira: null
+</task-schema>
 
 Do NOT close or modify any parent issue.

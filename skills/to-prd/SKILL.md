@@ -1,14 +1,14 @@
 ---
 name: to-prd
-description: Turn the current conversation context into a PRD and publish it to the project issue tracker. Use when user wants to create a PRD from the current context.
+description: Turn the current conversation context into a PRD, then publish it to Jira or save it as a local plan doc (routed by project.yaml jira_key). Use when user wants to create a PRD from the current context.
 origin: claude-projects
 ---
 
-This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user — just synthesize what you already know.
+This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT run a fresh interview — synthesize what you already know. The only check-ins are the two module confirmations in step 2.
 
 ## Process
 
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the PRD, and respect any ADRs in the area you're touching.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the vocabulary from `CONTEXT.md` (the project's domain glossary) throughout the PRD, and respect any ADRs in `docs/adr/` that touch the area you're working in.
 
 2. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
 
@@ -16,7 +16,11 @@ A deep module (as opposed to a shallow module) is one which encapsulates a lot o
 
 Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
 
-3. Write the PRD using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+3. Write the PRD using the template below, then route it per `project.yaml`:
+
+   - **`jira_key` is set** → publish the PRD to the Jira project and apply the `ready-for-agent` label. No further triage needed.
+   - **`jira_key` is empty** → save the PRD as `docs/plans/<slug>-prd.md` with the workspace's lifecycle frontmatter (`status: active`).
+   - Use GitHub Issues only when explicitly asked to.
 
 <prd-template>
 

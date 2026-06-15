@@ -21,7 +21,7 @@ Bundled skills:
 |-------|---------|
 | `journal` | Append typed entries to `journal.yaml` |
 | `sync-status` | Regenerate `STATUS.md` from project state |
-| `grill-me` | Relentless design interview, one question at a time |
+| `grill-with-docs` | Relentless design interview that sharpens `CONTEXT.md` and offers ADRs |
 | `to-prd` | Synthesize conversation context into a PRD |
 | `to-issues` | Break a plan into tracer-bullet vertical-slice issues |
 | `tdd` | Test-driven development red-green-refactor loop |
@@ -38,7 +38,7 @@ Bundled skills:
 ```
 proj <name>                     # scaffold a bare workspace
 proj <name> --skills            # scaffold + copy all bundled skills to .claude/skills/
-proj <name> --skills tdd,grill-me  # scaffold + copy specific skills
+proj <name> --skills tdd,grill-with-docs  # scaffold + copy specific skills
 proj <name> --jira KEY          # include Jira key in project.yaml
 proj --dry-run <name>           # preview without writing
 proj --show-claude-md           # print the embedded CLAUDE.md template

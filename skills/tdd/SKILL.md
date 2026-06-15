@@ -45,7 +45,9 @@ RIGHT (vertical):
 
 ### 1. Planning
 
-When exploring the codebase, use the project's domain glossary so that test names and interface vocabulary match the project's language, and respect ADRs in the area you're touching.
+When exploring the codebase, use the vocabulary from `CONTEXT.md` (the project's domain glossary) so test names and interface vocabulary match the project's language, and respect any ADRs in `docs/adr/`.
+
+In a project workspace you are usually implementing one `project.yaml` task. Pick a task whose `blocked_by` are all `done`, and flip its `status` from `todo` to `active` when you start — that is the journal's `started` signal.
 
 Before writing any code:
 
@@ -98,6 +100,13 @@ After all tests pass, look for [refactor candidates](refactoring.md):
 - [ ] Run tests after each refactor step
 
 **Never refactor while RED.** Get to GREEN first.
+
+### 5. Close out (project workspace)
+
+When the task's behaviors are all GREEN and refactored:
+
+- Flip the `project.yaml` task `status` to `done` — the journal's `done` signal.
+- For a meaningful plan or milestone (not every task), write a validation doc to `docs/validations/` with the evidence (commands run, `path:line`, test output) and reference it from the `done` journal entry.
 
 ## Checklist Per Cycle
 
