@@ -1,6 +1,6 @@
 # claude-projects
 
-Scaffolding and conventions for Claude Code project workspaces.
+Scaffolding and conventions for working on projects with Claude Code
 
 ## Install
 
