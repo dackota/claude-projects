@@ -42,7 +42,6 @@ This structure pays off when work spans **multiple sessions** and involves **dec
 
 **Not worth the overhead:**
 - A quick one-off fix or a single-session task
-- Exploratory spikes you'll throw away
 - Simple questions answered in a single exchange
 
 If you're not sure, scaffold it anyway — `proj` takes seconds and the workspace stays out of your way if you don't need it. The cost of over-structuring a small task is low; the cost of under-structuring a large one is a Claude that loses the thread every session.
