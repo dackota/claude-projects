@@ -1,6 +1,53 @@
 # claude-projects
 
-Scaffolding and conventions for working on projects with Claude Code
+**Give Claude Code a memory that survives across sessions.** `proj` scaffolds a project workspace where Claude picks up exactly where it left off — no re-explaining the goal, no re-reading plans you abandoned days ago, no re-litigating decisions you already made.
+
+## The problem
+
+Claude Code starts every session with a blank slate. For a quick fix, that's fine. But for work that spans days and many sessions — a feature, a migration, a long investigation — you pay a re-orientation tax *every single time*:
+
+- You re-explain what the project is and why it matters.
+- Claude opens a plan you abandoned two sessions ago and treats it as current.
+- It re-proposes a decision you already made and reversed.
+- Nobody — you or Claude — has a reliable picture of what's in progress, what's blocked, and what's next.
+
+The longer the project runs, the worse the drift. State that lives only in the chat history evaporates the moment the session ends.
+
+## What `proj` does
+
+`proj` creates a workspace with a handful of control files that hold project state *outside* the conversation, plus skills that keep those files current automatically. The result is a directory Claude treats as durable memory for one body of work:
+
+- **`STATUS.md`** — a ~500-token, always-current synthesis Claude reads *first* every session: goal, active work, blockers, recent decisions, next moves. Re-orientation cost drops to near zero.
+- **`journal.yaml`** — an append-only event log. Every decision, plan, blocker, task flip, and PR is recorded the moment it happens, so the project's history survives the session.
+- **Domain glossary + ADRs** — canonical terminology (`CONTEXT.md`) and the *why* behind hard-to-reverse decisions (`docs/adr/`), so they don't get re-litigated later.
+- **An idea-to-ship skill pipeline** — `/grill-with-docs → /to-prd → /to-issues → /tdd` carries a rough idea through to shipped code, while `/journal` and `/sync-status` keep the state files fresh in the background (wired via hooks, so you rarely invoke them by hand).
+
+Scaffold one in seconds, then just start working:
+
+```bash
+proj my-feature --skills
+cd my-feature
+claude
+```
+
+## When to use it
+
+This structure pays off when work spans **multiple sessions** and involves **decisions worth tracking**. The re-orientation cost it eliminates only matters when there's meaningful state to preserve.
+
+**Good fit:**
+- Feature work that will take more than one session to complete
+- Migrations or refactors touching many files across many PRs
+- Technical investigations where research and decisions accumulate
+- Anything with a Jira ticket and a plan document behind it
+
+**Not worth the overhead:**
+- A quick one-off fix or a single-session task
+- Exploratory spikes you'll throw away
+- Simple questions answered in a single exchange
+
+If you're not sure, scaffold it anyway — `proj` takes seconds and the workspace stays out of your way if you don't need it. The cost of over-structuring a small task is low; the cost of under-structuring a large one is a Claude that loses the thread every session.
+
+---
 
 ## Install
 
@@ -39,29 +86,6 @@ From there, use the skills as you work. They compose into a natural flow:
 /journal         ← (Passive) Claude records decisions, task-status changes, PRs, etc. automatically; /journal can also force an entry
 /sync-status     ← (Passive) Regenerates STATUS.md from current state so Claude stays focused on what's relevant now
 ```
-
----
-
-## What this is
-
-Each project workspace is a directory that Claude Code uses as context for a large body of work — a feature, migration, investigation, etc. that benefits from having context on multiple sources (repos, plans, etc). This tool defines the structure those workspaces follow, provides a CLI to create them, and ships a set of commonly used and useful skills plus a living curated knowledge store that keeps Claude oriented across sessions.
-
-## When to use it
-
-This structure pays off when work spans **multiple sessions** and involves **decisions worth tracking**. The re-orientation cost it eliminates — Claude re-reading stale plans, rediscovering superseded decisions, losing track of what's in-progress — only matters when there's meaningful state to preserve.
-
-**Good fit:**
-- Feature work that will take more than one session to complete
-- Migrations or refactors touching many files across many PRs
-- Technical investigations where research and decisions accumulate
-- Anything with a Jira ticket and a plan document behind it
-
-**Not worth the overhead:**
-- A quick one-off fix or a single-session task
-- Exploratory spikes you'll throw away
-- Simple questions answered in a single exchange
-
-If you're not sure, scaffold it anyway — `proj` takes seconds and the workspace stays out of your way if you don't need it. The cost of over-structuring a small task is low; the cost of under-structuring a large one is a Claude that loses the thread every session.
 
 ## Usage
 
