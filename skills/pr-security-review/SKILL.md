@@ -19,7 +19,17 @@ verdict exists for the current `HEAD` commit. This skill produces that verdict.
 ## When this runs
 
 - You're about to open a PR, or
-- The PR security gate blocked `gh pr create` and told you to review first.
+- The PR security gate blocked `gh pr create` and told you to review first, or
+- You invoke it manually to review a change the gate would otherwise skip.
+
+## What the gate auto-skips
+
+The `gh pr create` gate does **not** require a review for every PR. With no
+recorded verdict, it requires review when the diff touches **infra** files (any
+size) or is a **code change larger than `PR_SECURITY_MAX_SMALL_LINES` lines**
+(default 25). Small code-only diffs and docs/config-only diffs pass
+automatically. Running this skill by hand always works regardless of size — it
+records a verdict, and the gate honors a recorded verdict over any skip rule.
 
 ## Procedure
 

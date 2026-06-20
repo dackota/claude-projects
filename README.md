@@ -294,16 +294,20 @@ How it flows:
 
 ```
 gh pr create
-  -> hook: passing review for HEAD <sha>?
-     no  -> BLOCK: run /pr-security-review first
-  /pr-security-review:
+  -> hook: verdict recorded for HEAD <sha>?
+       yes -> honor it (PASS allow / CRITICAL block)
+       no  -> infra in diff?            -> BLOCK: review required (any size)
+              code-only & <= 25 lines?  -> allow (small change skips)
+              docs/config only?         -> allow
+              else (larger code)        -> BLOCK: review required
+  /pr-security-review (run on block, or manually anytime):
      classify diff (code/infra) -> spawn security-reviewer on base...HEAD
      -> verdict@<sha> in .git/pr-security-review/
      CRITICAL -> blocks PR (fix -> new commit -> auto re-review)
      PASS     -> findings folded into PR body, gh pr create allowed
 ```
 
-Classification is path-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
+Classification is path-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both. The gate skips small code-only diffs (≤ 25 changed lines; override with `PR_SECURITY_MAX_SMALL_LINES`) — infra changes are reviewed at any size — but you can run `/pr-security-review` by hand on any change, and a recorded verdict always wins. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
 
 > The `/grill-with-docs`, `/to-prd`, `/to-issues`, and `/tdd` skills are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering).
 

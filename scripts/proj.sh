@@ -230,15 +230,19 @@ staleness hook also warns before the first edit in a stale worktree.
 ## Pull requests — independent security review first
 
 When the `pr-security-review` skill is installed (`proj --skills`), `gh pr create`
-is gated: a hook blocks it until an independent security review has passed for the
-current `HEAD` commit. Before opening a PR, run the `pr-security-review` skill — it
-classifies the diff (code/infra), spawns a fresh `security-reviewer` agent (which
-never saw the implementation) on the changes, records a verdict under
-`.git/pr-security-review/<sha>`, and folds findings into the PR body.
-
+is gated. The `pr-security-review` skill classifies the diff (code/infra), spawns
+a fresh `security-reviewer` agent (which never saw the implementation), records a
+verdict under `.git/pr-security-review/<sha>`, and folds findings into the PR body.
 CRITICAL findings block the PR until fixed (each fix is a new commit, which
-re-reviews automatically); HIGH/MEDIUM/LOW pass but are noted in the PR body. The
-gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
+re-reviews automatically); HIGH/MEDIUM/LOW pass but are noted in the PR body.
+
+The gate does not fire on every PR. With no recorded verdict it requires review
+when the diff touches **infra** (any size) or is a **code change over
+`PR_SECURITY_MAX_SMALL_LINES` lines** (default 25); small code-only and
+docs-only diffs pass automatically. You can always run the `pr-security-review`
+skill by hand to review a skipped change — a recorded verdict is honored over any
+skip rule. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI
+bypass it.
 
 ## CONTEXT.md — domain glossary
 
