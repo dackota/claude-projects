@@ -233,7 +233,7 @@ Status changes drive the journal (`todo → active` → `started`, `active → d
 
 Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink them globally (see Install) for use across all projects.
 
-Skills are copied per-project by default. Hook-bearing skills (`journal`, `sync-status`, `repo`) also get their hooks **idempotently merged** into `.claude/settings.json` — so they compose cleanly and re-running `proj update-skills` on an existing workspace adds any missing wiring without duplicating it. `journal`/`sync-status` add `asyncRewake` hooks that prompt Claude to log events and keep `STATUS.md` current; `repo` adds a PreToolUse guard plus staleness hooks and drops `scripts/repo.sh` into the workspace.
+Skills are copied per-project by default. Hook-bearing skills (`journal`, `sync-status`, `repo`, `pr-security-review`) also get their hooks **idempotently merged** into `.claude/settings.json` — so they compose cleanly and re-running `proj update-skills` on an existing workspace adds any missing wiring without duplicating it. `journal`/`sync-status` add `asyncRewake` hooks that prompt Claude to log events and keep `STATUS.md` current; `repo` adds a PreToolUse guard plus staleness hooks and drops `scripts/repo.sh` into the workspace; `pr-security-review` adds the PR gate. A skill can also pull in an agent via an `agents:` list in its frontmatter — `proj` copies the named definitions from the repo's `agents/` into `.claude/agents/`.
 
 ### /journal
 
@@ -281,6 +281,29 @@ scripts/repo.sh list                           # registered repos
 - A **`Stop`** hook summarizes any stale worktrees at session end.
 
 `repo.sh` requires `yq` (v4) for `project.yaml` writes. Already on an existing workspace? `proj update-skills` installs `repo.sh` and merges the hooks in without disturbing your other settings.
+
+### /pr-security-review
+
+Gates `gh pr create` behind an **independent** security review — a fresh agent that never saw the implementation reviews the diff with skeptical eyes, which catches what self-review rationalizes away. Bundles three skills plus an agent:
+
+- **`security-review`** and **`cloud-infra-security`** — the checklists (app-code and cloud/IaC). Moved into the bundle so each workspace is self-contained; the global `~/.claude/skills/` copies become symlinks back to these.
+- **`pr-security-review`** — the orchestrator: a PreToolUse hook blocks `gh pr create` until a passing review exists for the current `HEAD`, and the skill classifies the diff, spawns the reviewer, records the verdict, and writes findings into the PR body.
+- **`security-reviewer`** — a review-only agent (no `Write`/`Edit`), copied into `.claude/agents/` via the skill's `agents:` frontmatter.
+
+How it flows:
+
+```
+gh pr create
+  -> hook: passing review for HEAD <sha>?
+     no  -> BLOCK: run /pr-security-review first
+  /pr-security-review:
+     classify diff (code/infra) -> spawn security-reviewer on base...HEAD
+     -> verdict@<sha> in .git/pr-security-review/
+     CRITICAL -> blocks PR (fix -> new commit -> auto re-review)
+     PASS     -> findings folded into PR body, gh pr create allowed
+```
+
+Classification is path-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
 
 > The `/grill-with-docs`, `/to-prd`, `/to-issues`, and `/tdd` skills are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering).
 
