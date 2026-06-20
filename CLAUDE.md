@@ -9,6 +9,7 @@ This is a **bootstrap tool repo** — not a project workspace. It provides the `
 | `scripts/proj.sh` | CLI that scaffolds new project workspaces |
 | `scripts/test-proj.sh` | Smoke tests for `proj.sh` |
 | `skills/` | Skills bundled with this repo (can be copied into new projects via `--skills`) |
+| `agents/` | Agent definitions a skill can pull in via its `agents:` frontmatter |
 | `README.md` | User-facing documentation |
 
 ## Skills
@@ -26,11 +27,16 @@ Bundled skills:
 | `to-issues` | Break a plan into tracer-bullet vertical-slice issues |
 | `tdd` | Test-driven development red-green-refactor loop |
 | `repo` | Hook-enforced repo & worktree management via `scripts/repo.sh` |
+| `security-review` | App-code security checklist (OWASP, secrets, authn/z, injection) |
+| `cloud-infra-security` | Cloud/IaC security checklist (IAM, network, CI/CD, secrets) |
+| `pr-security-review` | Gates `gh pr create` behind an independent `security-reviewer` agent |
 
 ## Working on this repo
 
 - **Adding a skill**: create `skills/<name>/SKILL.md` (+ any supporting `.md` files). No other changes needed — `proj --skills` picks up any skill in `skills/` by name.
-- **Hook-bearing skills** (`journal`, `sync-status`, `repo`) are special-cased in `wire_skill_hooks()` / `post_install_skill()` in `scripts/proj.sh`, which idempotently merge their hooks into the workspace's `.claude/settings.json` (and, for `repo`, copy `repo.sh` out to `scripts/`). Wire a new hook-bearing skill there.
+- **Hook-bearing skills** (`journal`, `sync-status`, `repo`, `pr-security-review`) are special-cased in `wire_skill_hooks()` / `post_install_skill()` in `scripts/proj.sh`, which idempotently merge their hooks into the workspace's `.claude/settings.json` (and, for `repo`, copy `repo.sh` out to `scripts/`). Wire a new hook-bearing skill there.
+- **Agent-bearing skills**: a skill declares the agents it needs via an `agents:` list in its `SKILL.md` frontmatter. `install_skill_agents()` reads that with `yq` and copies the named `agents/<name>.md` into the workspace's `.claude/agents/` (auto-discovered, no wiring). Add new agents under `agents/`.
+- **`security-review` & `cloud-infra-security`** are the canonical sources for those skills; `~/.claude/skills/<name>` are symlinks back to them.
 - **Changing the scaffold template**: edit the `claude_md_content()` heredoc in `scripts/proj.sh`. Run `bash scripts/test-proj.sh` to verify.
 - **Installing `proj` globally**: `ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj`
 - **Installing skills globally**: `ln -s "$(pwd)/skills/<name>" ~/.claude/skills/<name>`

@@ -170,6 +170,62 @@ assert "guard: allows git status"                   "$([[ "$(guard 'git status' 
 assert "guard: allows git checkout -- file"         "$([[ "$(guard 'git checkout -- README.md' "$RT/repos/remote")" == "0" ]] && echo true || echo false)"
 assert "guard: ignores non-git commands"            "$([[ "$(guard 'ls -la repos/' "$RT")" == "0" ]] && echo true || echo false)"
 
+# ── pr-security-review: install + agent + hook wiring ─────────────────────────
+assert "pr-review: skill dir copied"                "$([[ -d $RT/.claude/skills/pr-security-review ]] && echo true || echo false)"
+assert "pr-review: classify.sh installed"           "$([[ -f $RT/.claude/skills/pr-security-review/classify.sh ]] && echo true || echo false)"
+assert "pr-review: gate hook installed"             "$([[ -f $RT/.claude/skills/pr-security-review/hooks/pr-gate.sh ]] && echo true || echo false)"
+assert "pr-review: bundled security-review skill"   "$([[ -d $RT/.claude/skills/security-review ]] && echo true || echo false)"
+assert "pr-review: bundled cloud-infra skill"       "$([[ -d $RT/.claude/skills/cloud-infra-security ]] && echo true || echo false)"
+assert "pr-review: agent copied to .claude/agents"  "$([[ -f $RT/.claude/agents/security-reviewer.md ]] && echo true || echo false)"
+assert "pr-review: pr-gate hook wired in settings"  "$([[ "$(count_cmd pr-gate)" == "1" ]] && echo true || echo false)"
+
+CLASSIFY="$RT/.claude/skills/pr-security-review/classify.sh"
+PR_GATE="$RT/.claude/skills/pr-security-review/hooks/pr-gate.sh"
+
+# ── classify.sh: path-based dimension detection ───────────────────────────────
+CLS="${TMPDIR_BASE}/cls"
+git init -q "$CLS"
+git -C "$CLS" config user.email t@t.test
+git -C "$CLS" config user.name "Test"
+git -C "$CLS" config commit.gpgsign false
+echo "base" > "$CLS/README.md"; git -C "$CLS" add -A; git -C "$CLS" commit -qm base
+git -C "$CLS" branch -M main
+classify() { ( cd "$CLS" && bash "$CLASSIFY" main ); }
+
+git -C "$CLS" checkout -q -b code-only main
+echo "print('x')" > "$CLS/app.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm code
+assert "classify: code only -> code"                "$([[ "$(classify)" == "code" ]] && echo true || echo false)"
+
+git -C "$CLS" checkout -q -b infra-only main
+printf 'resource "aws_s3_bucket" "b" {}\n' > "$CLS/main.tf"; git -C "$CLS" add -A; git -C "$CLS" commit -qm infra
+assert "classify: terraform only -> infra"          "$([[ "$(classify)" == "infra" ]] && echo true || echo false)"
+
+git -C "$CLS" checkout -q -b both main
+echo "print('x')" > "$CLS/app.py"; printf 'a: b\n' > "$CLS/values.yaml"
+git -C "$CLS" add -A; git -C "$CLS" commit -qm both
+assert "classify: code+yaml -> code infra"          "$([[ "$(classify)" == "code infra" ]] && echo true || echo false)"
+
+git -C "$CLS" checkout -q -b docs-only main
+echo "notes" > "$CLS/NOTES.md"; git -C "$CLS" add -A; git -C "$CLS" commit -qm docs
+assert "classify: docs only -> none"                "$([[ -z "$(classify)" ]] && echo true || echo false)"
+
+# ── pr-gate.sh: gates gh pr create on the SHA-keyed verdict ───────────────────
+SHA="$(git -C "$CLS" rev-parse HEAD)"
+VERDICT_DIR="$CLS/.git/pr-security-review"
+prgate() { # prgate <command> -> exit code
+  local rc=0
+  echo "{\"tool_input\":{\"command\":\"$1\"},\"cwd\":\"$CLS\"}" | bash "$PR_GATE" >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+rm -rf "$VERDICT_DIR"
+assert "gate: blocks gh pr create w/o verdict"      "$([[ "$(prgate 'gh pr create --title x')" == "2" ]] && echo true || echo false)"
+mkdir -p "$VERDICT_DIR"; printf 'PASS\nCRITICAL:0 HIGH:1\n' > "$VERDICT_DIR/$SHA"
+assert "gate: allows on PASS verdict"               "$([[ "$(prgate 'gh pr create --title x')" == "0" ]] && echo true || echo false)"
+printf 'BLOCK\nCRITICAL:1\n' > "$VERDICT_DIR/$SHA"
+assert "gate: blocks on BLOCK verdict"              "$([[ "$(prgate 'gh pr create --title x')" == "2" ]] && echo true || echo false)"
+assert "gate: ignores non-create gh (pr list)"      "$([[ "$(prgate 'gh pr list')" == "0" ]] && echo true || echo false)"
+assert "gate: ignores non-gh commands"              "$([[ "$(prgate 'git status')" == "0" ]] && echo true || echo false)"
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

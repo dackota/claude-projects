@@ -48,6 +48,7 @@ while [[ -L "$_SCRIPT" ]]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$_SCRIPT")" && pwd)"
 SKILLS_SRC="${SCRIPT_DIR}/../skills"
+AGENTS_SRC="${SCRIPT_DIR}/../agents"
 
 # ── colours ──────────────────────────────────────────────────────────────────
 GREEN="\033[0;32m"
@@ -87,7 +88,7 @@ add_hook() {
 # wire_skill_hooks <target> <skill>
 wire_skill_hooks() {
   local target="$1" skill="$2" settings
-  case "$skill" in journal|sync-status|repo) ;; *) return 0 ;; esac
+  case "$skill" in journal|sync-status|repo|pr-security-review) ;; *) return 0 ;; esac
   if $DRY_RUN; then
     echo "  [hooks] .claude/settings.json  <- ${skill} hooks (merge)"
     return 0
@@ -109,7 +110,37 @@ wire_skill_hooks() {
       add_hook "$settings" PreToolUse "Edit|Write" "bash .claude/skills/repo/hooks/repo-stale.sh"  false ""
       add_hook "$settings" Stop       ""           "bash .claude/skills/repo/hooks/repo-stale-stop.sh" true "Stale worktrees detected"
       ;;
+    pr-security-review)
+      add_hook "$settings" PreToolUse "Bash" "bash .claude/skills/pr-security-review/hooks/pr-gate.sh" false ""
+      ;;
   esac
+}
+
+# Skills may declare `agents:` in their SKILL.md frontmatter. Copy each named
+# agent definition from the repo's agents/ dir into the workspace's
+# .claude/agents/ (auto-discovered there — no wiring needed).
+# install_skill_agents <target> <skill>
+install_skill_agents() {
+  local target="$1" skill="$2" agent
+  local skill_md="${SKILLS_SRC}/${skill}/SKILL.md"
+  [[ -f "$skill_md" ]] || return 0
+  command -v yq >/dev/null 2>&1 || return 0
+  local agents
+  agents="$(yq --front-matter=extract '.agents // [] | .[]' "$skill_md" 2>/dev/null || true)"
+  [[ -z "${agents// /}" ]] && return 0
+  for agent in $agents; do
+    local src="${AGENTS_SRC}/${agent}.md"
+    if [[ ! -f "$src" ]]; then
+      warn "Skill '${skill}' wants agent '${agent}' but ${src} is missing — skipping."
+      continue
+    fi
+    if $DRY_RUN; then
+      echo "  [agent] .claude/agents/${agent}.md"
+    else
+      mkdir -p "$target/.claude/agents"
+      cp "$src" "$target/.claude/agents/${agent}.md"
+    fi
+  done
 }
 
 # The repo skill also drops a first-class, user-visible scripts/repo.sh.
@@ -131,6 +162,7 @@ install_repo_script() {
 post_install_skill() {
   local target="$1" skill="$2"
   wire_skill_hooks "$target" "$skill"
+  install_skill_agents "$target" "$skill"
   [[ "$skill" == "repo" ]] && install_repo_script "$target"
   return 0
 }
@@ -194,6 +226,19 @@ scripts/repo.sh list                           # registered repos
 Worktrees go stale as their base branch advances. Run `scripts/repo.sh status`
 before relying on one, and `scripts/repo.sh sync` to catch it up — the guard's
 staleness hook also warns before the first edit in a stale worktree.
+
+## Pull requests — independent security review first
+
+When the `pr-security-review` skill is installed (`proj --skills`), `gh pr create`
+is gated: a hook blocks it until an independent security review has passed for the
+current `HEAD` commit. Before opening a PR, run the `pr-security-review` skill — it
+classifies the diff (code/infra), spawns a fresh `security-reviewer` agent (which
+never saw the implementation) on the changes, records a verdict under
+`.git/pr-security-review/<sha>`, and folds findings into the PR body.
+
+CRITICAL findings block the PR until fixed (each fix is a new commit, which
+re-reviews automatically); HIGH/MEDIUM/LOW pass but are noted in the PR body. The
+gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
 
 ## CONTEXT.md — domain glossary
 
