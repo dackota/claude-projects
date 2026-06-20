@@ -133,9 +133,9 @@ proj spike --skills tdd,grill-with-docs
 │   ├── adr/                   # architectural decision records
 │   ├── research/              # in-depth research docs
 │   └── validations/           # proof of completion
-├── scripts/                   # one-off and repeatable scripts
-├── repos/                     # cloned repos (gitignored)
-└── worktrees/                 # git worktrees (gitignored)
+├── scripts/                   # one-off and repeatable scripts (repo.sh when --skills repo)
+├── repos/                     # cloned repos (gitignored; managed via scripts/repo.sh)
+└── worktrees/                 # git worktrees, worktrees/<task>/<repo> (gitignored)
 ```
 
 ## Living status system
@@ -234,7 +234,7 @@ Status changes drive the journal (`todo → active` → `started`, `active → d
 
 Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink them globally (see Install) for use across all projects.
 
-Skills are copied per-project by default. When the `journal` or `sync-status` skills are copied, `proj` also creates `.claude/settings.json` with `asyncRewake` hooks that automatically prompt Claude to log events and keep `STATUS.md` current.
+Skills are copied per-project by default. Hook-bearing skills (`journal`, `sync-status`, `repo`) also get their hooks **idempotently merged** into `.claude/settings.json` — so they compose cleanly and re-running `proj update-skills` on an existing workspace adds any missing wiring without duplicating it. `journal`/`sync-status` add `asyncRewake` hooks that prompt Claude to log events and keep `STATUS.md` current; `repo` adds a PreToolUse guard plus staleness hooks and drops `scripts/repo.sh` into the workspace.
 
 ### /journal
 
@@ -259,6 +259,29 @@ Valid types: `decision` · `plan` · `started` · `done` · `blocker` · `supers
 Regenerates `STATUS.md` from all authoritative inputs — `PROJECT.md`, `project.yaml`, `journal.yaml`, and every `status: active` doc in `docs/`. Run it (or let Claude invoke it automatically) at the end of any session where meaningful work happened.
 
 **Hook:** a `Stop` hook fires when `journal.yaml` is newer than `STATUS.md`, prompting Claude to sync before the session ends.
+
+### /repo
+
+Makes repo and worktree handling explicit and enforced, so you can trust Claude is using `repos/` and worktrees the way you intend — and isn't quietly building on a worktree that's gone stale. Installs a first-class, readable `scripts/repo.sh` and routes every repo/worktree operation through it:
+
+```
+scripts/repo.sh clone <url> [name]             # clone into repos/, register in project.yaml
+scripts/repo.sh worktree <task> <repo> [url]   # start work: worktrees/<task>/<repo> on branch <task>
+scripts/repo.sh sync <task> [repo]             # merge origin/<base> in (worktrees drift while you work)
+scripts/repo.sh status [task]                  # behind/ahead vs base + dirty + STALE flag, per worktree
+scripts/repo.sh remove <task> [repo]           # remove worktree + delete local branch (safe by default)
+scripts/repo.sh list                           # registered repos
+```
+
+- **Repos are declared in `project.yaml`; worktrees are derived live** from `git worktree list` and the `worktrees/<task>/<repo>` layout (one task can span repos). No worktree state to drift out of sync.
+- **`sync` is the only working-tree mutation** — it refuses on a dirty tree, merges `origin/<base>` (no force-push), and stops to report conflicts rather than auto-resolving. **`remove`** refuses to discard unpushed commits unless `--force`.
+
+**Hooks:**
+- A **PreToolUse `Bash`** guard blocks raw `git clone`, `git worktree add`, and branch create/switch inside `repos/`/`worktrees/`, redirecting Claude to `repo.sh`. Read-only git and `git checkout -- <file>` stay allowed.
+- A **PreToolUse `Edit|Write`** hook warns (once per worktree per session) before Claude edits a worktree that's behind its base — catching drift *before* the rework, not after.
+- A **`Stop`** hook summarizes any stale worktrees at session end.
+
+`repo.sh` requires `yq` (v4) for `project.yaml` writes. Already on an existing workspace? `proj update-skills` installs `repo.sh` and merges the hooks in without disturbing your other settings.
 
 > The `/grill-with-docs`, `/to-prd`, `/to-issues`, and `/tdd` skills are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering).
 
