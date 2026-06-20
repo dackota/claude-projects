@@ -25,10 +25,12 @@ Bundled skills:
 | `to-prd` | Synthesize conversation context into a PRD |
 | `to-issues` | Break a plan into tracer-bullet vertical-slice issues |
 | `tdd` | Test-driven development red-green-refactor loop |
+| `repo` | Hook-enforced repo & worktree management via `scripts/repo.sh` |
 
 ## Working on this repo
 
 - **Adding a skill**: create `skills/<name>/SKILL.md` (+ any supporting `.md` files). No other changes needed — `proj --skills` picks up any skill in `skills/` by name.
+- **Hook-bearing skills** (`journal`, `sync-status`, `repo`) are special-cased in `wire_skill_hooks()` / `post_install_skill()` in `scripts/proj.sh`, which idempotently merge their hooks into the workspace's `.claude/settings.json` (and, for `repo`, copy `repo.sh` out to `scripts/`). Wire a new hook-bearing skill there.
 - **Changing the scaffold template**: edit the `claude_md_content()` heredoc in `scripts/proj.sh`. Run `bash scripts/test-proj.sh` to verify.
 - **Installing `proj` globally**: `ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj`
 - **Installing skills globally**: `ln -s "$(pwd)/skills/<name>" ~/.claude/skills/<name>`

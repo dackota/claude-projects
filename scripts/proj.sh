@@ -60,6 +60,81 @@ warn()  { echo -e "${YELLOW}[proj]${RESET} $*"; }
 error() { echo -e "${RED}[proj]${RESET} $*" >&2; }
 die()   { error "$*"; exit 1; }
 
+# ── skill hook wiring (idempotent settings.json merge) ─────────────────────────
+# Merge one hook into a settings.json, adding it only if a hook with the same
+# command isn't already present in the matching event+matcher group. Safe to
+# re-run; safe against existing journal/sync-status/repo wiring.
+# add_hook <settings_file> <event> <matcher> <command> <async true|false> <summary>
+add_hook() {
+  local file="$1" event="$2" matcher="$3" command="$4" async="$5" summary="$6" tmp
+  tmp="$(mktemp)"
+  jq \
+    --arg event "$event" --arg matcher "$matcher" --arg command "$command" \
+    --argjson async "$async" --arg summary "$summary" '
+    .hooks //= {} | .hooks[$event] //= []
+    | (.hooks[$event] | map(.matcher == $matcher) | index(true)) as $gi
+    | if $gi == null then .hooks[$event] += [{matcher: $matcher, hooks: []}] else . end
+    | (.hooks[$event] | map(.matcher == $matcher) | index(true)) as $g
+    | if (.hooks[$event][$g].hooks | map(.command) | index($command)) == null
+      then .hooks[$event][$g].hooks +=
+        [ ({type: "command", command: $command}
+           + (if $async then {asyncRewake: true, rewakeSummary: $summary} else {} end)) ]
+      else . end
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+# Wire the hooks a given skill needs into the target's settings.json.
+# wire_skill_hooks <target> <skill>
+wire_skill_hooks() {
+  local target="$1" skill="$2" settings
+  case "$skill" in journal|sync-status|repo) ;; *) return 0 ;; esac
+  if $DRY_RUN; then
+    echo "  [hooks] .claude/settings.json  <- ${skill} hooks (merge)"
+    return 0
+  fi
+  command -v jq >/dev/null 2>&1 || die "jq is required to wire skill hooks. Install: brew install jq"
+  settings="$target/.claude/settings.json"
+  mkdir -p "$target/.claude"
+  [[ -f "$settings" ]] || echo '{}' > "$settings"
+  case "$skill" in
+    journal)
+      add_hook "$settings" PostToolUse "Write|Edit" "bash .claude/skills/journal/hooks/journal-check.sh" true "Journal entry may be needed"
+      add_hook "$settings" Stop "" "bash .claude/skills/journal/hooks/journal-stop.sh" true "Unlogged journal events detected"
+      ;;
+    sync-status)
+      add_hook "$settings" Stop "" "bash .claude/skills/sync-status/hooks/sync-status-stop.sh" true "STATUS.md is out of date"
+      ;;
+    repo)
+      add_hook "$settings" PreToolUse "Bash"       "bash .claude/skills/repo/hooks/git-guard.sh"   false ""
+      add_hook "$settings" PreToolUse "Edit|Write" "bash .claude/skills/repo/hooks/repo-stale.sh"  false ""
+      add_hook "$settings" Stop       ""           "bash .claude/skills/repo/hooks/repo-stale-stop.sh" true "Stale worktrees detected"
+      ;;
+  esac
+}
+
+# The repo skill also drops a first-class, user-visible scripts/repo.sh.
+# install_repo_script <target>
+install_repo_script() {
+  local target="$1" src="${SKILLS_SRC}/repo/repo.sh"
+  if $DRY_RUN; then
+    echo "  [file] scripts/repo.sh"
+    return 0
+  fi
+  [[ -f "$src" ]] || { warn "repo skill copied but repo.sh missing at $src"; return 0; }
+  mkdir -p "$target/scripts"
+  cp "$src" "$target/scripts/repo.sh"
+  chmod +x "$target/scripts/repo.sh"
+}
+
+# Run after a skill is copied: wire its hooks and install any companion files.
+# post_install_skill <target> <skill>
+post_install_skill() {
+  local target="$1" skill="$2"
+  wire_skill_hooks "$target" "$skill"
+  [[ "$skill" == "repo" ]] && install_repo_script "$target"
+  return 0
+}
+
 # ── embedded CLAUDE.md ───────────────────────────────────────────────────────
 # This heredoc is the canonical CLAUDE.md for all scaffolded projects.
 # Update this when the template changes; new-project is self-contained.
@@ -92,12 +167,33 @@ Read `STATUS.md` first every session before opening any other file. It is a
 - `docs/validations/` - directory to store validation documents
 - `scripts/` - directory to contain one-off scripts used in the project but not
   belonging to a specific repository
-- `repos/` - directory containing cloned repos
-- `worktrees/` - directory containing git worktrees associated with tasks
+- `repos/` - cloned repos; managed via `scripts/repo.sh` — never clone by hand
+- `worktrees/` - git worktrees for tasks, laid out `worktrees/<task-id>/<repo>`;
+  managed via `scripts/repo.sh`
 
 Code repos and worktrees are cloned inside the workspace but are
-`.gitignore`-excluded; they are tracked via `project.yaml`, not committed here.
-Read `project.yaml` to see what repos and tasks exist.
+`.gitignore`-excluded; repos are tracked via `project.yaml`, worktrees are
+derived live. Read `project.yaml` to see what repos and tasks exist.
+
+## repos/ and worktrees/ — always via `scripts/repo.sh`
+
+When the `repo` skill is installed (`proj --skills`), all repo and worktree
+operations MUST go through `scripts/repo.sh`. A PreToolUse guard hook blocks raw
+`git clone`, `git worktree add`, and branch create/switch inside `repos/` and
+`worktrees/`; read-only git and `git checkout -- <file>` stay allowed.
+
+```
+scripts/repo.sh clone <url> [name]             # clone into repos/, register in project.yaml
+scripts/repo.sh worktree <task> <repo> [url]   # start work: worktrees/<task>/<repo> on branch <task>
+scripts/repo.sh sync <task> [repo]             # merge origin/<base> in (worktrees drift while you work)
+scripts/repo.sh status [task]                  # see how far behind/ahead each worktree is
+scripts/repo.sh remove <task> [repo]           # remove worktree + delete local branch (safe by default)
+scripts/repo.sh list                           # registered repos
+```
+
+Worktrees go stale as their base branch advances. Run `scripts/repo.sh status`
+before relying on one, and `scripts/repo.sh sync` to catch it up — the guard's
+staleness hook also warns before the first edit in a stale worktree.
 
 ## CONTEXT.md — domain glossary
 
@@ -275,13 +371,18 @@ session. File names MUST use dash-separated words. For all Markdown files in
   will be put into `scripts/`. Scripts should be written in Bash but you can use
   Python as well.
 
-- Repos is a directory that stores repositories needed by this project. These
-  repositories may be needed for research or changes in order to complete the
-  project. Clone the required repos here. Every time a repo is used for any
-  task it must be updated first so its always the latest.
+- Repos (`repos/`) stores repositories this project needs for research or
+  changes. NEVER run `git clone` directly — use
+  `scripts/repo.sh clone <url> [name]`, which clones into `repos/` and registers
+  the repo in `project.yaml`. `repo.sh` fetches automatically before every use,
+  so clones stay current.
 
-- Worktrees is a directory that stores git worktrees needed by this project.
-  Worktrees MUST be used when working on Tasks.
+- Worktrees (`worktrees/`) stores git worktrees for task work, laid out as
+  `worktrees/<task-id>/<repo>` (one task can span multiple repos). Worktrees MUST
+  be used when working on Tasks — never create branches inside a base clone.
+  Use `scripts/repo.sh worktree <task> <repo>` to start, `scripts/repo.sh sync`
+  to catch a worktree up to its base branch, and `scripts/repo.sh status` to
+  check for drift. Remove with `scripts/repo.sh remove <task> [repo]`.
 CLAUDE_MD_EOF
 }
 
@@ -375,6 +476,9 @@ if [[ "$SUBCOMMAND" == "update-skills" ]]; then
       cp -r "$SRC" "$DEST"
       UPDATED=$((UPDATED + 1))
     fi
+    # Re-wire hooks and (re)install companion files; idempotent, so safe to
+    # run against an already-populated existing workspace.
+    post_install_skill "$TARGET" "$skill"
   done
 
   echo ""
@@ -524,8 +628,6 @@ if $COPY_SKILLS; then
     warn "--skills requested but skills directory not found: $SKILLS_SRC"
     warn "Skills will not be copied. Check your installation."
   else
-    JOURNAL_HOOKS_NEEDED=false
-    SYNC_STATUS_HOOKS_NEEDED=false
     for skill in $SKILLS_TO_COPY; do
       SRC="${SKILLS_SRC}/${skill}"
       DEST="${TARGET}/.claude/skills/${skill}"
@@ -538,49 +640,11 @@ if $COPY_SKILLS; then
       else
         mkdir -p "$(dirname "$DEST")"
         cp -r "$SRC" "$DEST"
-        [[ "$skill" == "journal"      ]] && JOURNAL_HOOKS_NEEDED=true
-        [[ "$skill" == "sync-status"  ]] && SYNC_STATUS_HOOKS_NEEDED=true
       fi
+      # Wire hooks + install companion files for hook-bearing skills.
+      # Idempotent merge, so it composes cleanly when several are copied.
+      post_install_skill "$TARGET" "$skill"
     done
-
-    # Build .claude/settings.json from whichever hook-bearing skills were copied
-    if $JOURNAL_HOOKS_NEEDED || $SYNC_STATUS_HOOKS_NEEDED; then
-      if $DRY_RUN; then
-        echo "  [file] .claude/settings.json  (skill hooks)"
-      else
-        # Compose the Stop hooks array based on which skills are present
-        STOP_HOOKS="[]"
-        if $JOURNAL_HOOKS_NEEDED; then
-          STOP_HOOKS=$(echo "$STOP_HOOKS" | jq '. + [{"type":"command","command":"bash .claude/skills/journal/hooks/journal-stop.sh","asyncRewake":true,"rewakeSummary":"Unlogged journal events detected"}]')
-        fi
-        if $SYNC_STATUS_HOOKS_NEEDED; then
-          STOP_HOOKS=$(echo "$STOP_HOOKS" | jq '. + [{"type":"command","command":"bash .claude/skills/sync-status/hooks/sync-status-stop.sh","asyncRewake":true,"rewakeSummary":"STATUS.md is out of date"}]')
-        fi
-
-        SETTINGS=$(jq -n \
-          --argjson stopHooks "$STOP_HOOKS" \
-          --argjson journalHooks "$JOURNAL_HOOKS_NEEDED" \
-          '{
-            hooks: {
-              Stop: [{ matcher: "", hooks: $stopHooks }]
-            }
-          } |
-          if $journalHooks then
-            .hooks.PostToolUse = [{
-              matcher: "Write|Edit",
-              hooks: [{
-                type: "command",
-                command: "bash .claude/skills/journal/hooks/journal-check.sh",
-                asyncRewake: true,
-                rewakeSummary: "Journal entry may be needed"
-              }]
-            }]
-          else . end')
-
-        mkdir -p "$TARGET/.claude"
-        printf '%s\n' "$SETTINGS" > "$TARGET/.claude/settings.json"
-      fi
-    fi
   fi
 fi
 
