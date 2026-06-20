@@ -1,26 +1,26 @@
 # claude-projects
 
-**Give Claude Code a memory that survives across sessions.** `proj` scaffolds a project workspace where Claude picks up exactly where it left off — no re-explaining the goal, no re-reading plans you abandoned days ago, no re-litigating decisions you already made.
+**Scaffold self-contained Claude Code workspaces that remember, follow a workflow, and enforce their own guardrails.** `proj` creates a project directory where Claude picks up exactly where it left off, carries a rough idea through to shipped code, and can't quietly skip the disciplines you care about — repo hygiene, worktree isolation, an independent security review before every PR. Skills, hooks, and agents all ship *inside the workspace*, like a virtualenv for one body of work — no reliance on global config.
 
 ## The problem
 
-Claude Code starts every session with a blank slate. For a quick fix, that's fine. But for work that spans days and many sessions — a feature, a migration, a long investigation — you pay a re-orientation tax *every single time*:
+Claude Code starts every session with a blank slate, and nothing holds it to your conventions. For a quick fix that's fine. But for work that spans days and many sessions — a feature, a migration, a long investigation — two things bite you:
 
-- You re-explain what the project is and why it matters.
-- Claude opens a plan you abandoned two sessions ago and treats it as current.
-- It re-proposes a decision you already made and reversed.
-- Nobody — you or Claude — has a reliable picture of what's in progress, what's blocked, and what's next.
+- **Re-orientation tax.** You re-explain the goal; Claude reopens a plan you abandoned two sessions ago as if it's current, and re-proposes a decision you already reversed. State that lives only in chat history evaporates the moment the session ends.
+- **Drifting discipline.** Repos get cloned wherever; branches get switched inside a shared clone, stranding in-progress work; worktrees silently fall behind their base, costing rework at merge time; PRs open with no security review. Prose rules in a `CLAUDE.md` get ignored under pressure.
 
-The longer the project runs, the worse the drift. State that lives only in the chat history evaporates the moment the session ends.
+The longer the project runs, the worse both get.
 
 ## What `proj` does
 
-`proj` creates a workspace with a handful of control files that hold project state *outside* the conversation, plus skills that keep those files current automatically. The result is a directory Claude treats as durable memory for one body of work:
+`proj` creates a workspace with control files that hold project state *outside* the conversation, plus bundled skills, hooks, and agents that keep those files current and enforce discipline automatically. Four pillars:
 
-- **`STATUS.md`** — a ~500-token, always-current synthesis Claude reads *first* every session: goal, active work, blockers, recent decisions, next moves. Re-orientation cost drops to near zero.
-- **`journal.yaml`** — an append-only event log. Every decision, plan, blocker, task flip, and PR is recorded the moment it happens, so the project's history survives the session.
-- **Domain glossary + ADRs** — canonical terminology (`CONTEXT.md`) and the *why* behind hard-to-reverse decisions (`docs/adr/`), so they don't get re-litigated later.
-- **An idea-to-ship skill pipeline** — `/grill-with-docs → /to-prd → /to-issues → /tdd` carries a rough idea through to shipped code, while `/journal` and `/sync-status` keep the state files fresh in the background (wired via hooks, so you rarely invoke them by hand).
+- **Durable memory** — `STATUS.md` (a ~500-token current-state synthesis Claude reads *first* every session), an append-only `journal.yaml`, a `CONTEXT.md` glossary, and ADRs for hard-to-reverse decisions. Re-orientation cost drops to near zero.
+- **An idea-to-ship pipeline** — `/grill-with-docs → /to-prd → /to-issues → /tdd` carries a rough idea through to tested code; `/journal` and `/sync-status` keep the state files fresh in the background (wired via hooks, so you rarely invoke them by hand).
+- **Repo & worktree discipline** — the `repo` skill routes every repo/worktree operation through a generated `scripts/repo.sh`, with a hook that blocks raw `git clone` / `worktree add` / branch-switching and warns before you build on a worktree that's gone stale.
+- **Independent PR security review** — the `pr-security-review` skill gates `gh pr create` behind a fresh `security-reviewer` agent that reviews the diff against bundled security checklists, so risky changes can't ship unreviewed.
+
+Everything is **project-local**: skills, hooks, and agents are copied into the workspace and wired automatically, so it stays self-contained and portable.
 
 Scaffold one in seconds, then just start working:
 
@@ -32,11 +32,11 @@ claude
 
 ## When to use it
 
-This structure pays off when work spans **multiple sessions** and involves **decisions worth tracking**. The re-orientation cost it eliminates only matters when there's meaningful state to preserve.
+This pays off when work spans **multiple sessions**, touches **real repos**, and ends in **PRs** — that's where the memory, the repo discipline, and the security gate all earn their keep.
 
 **Good fit:**
-- Feature work that will take more than one session to complete
-- Migrations or refactors touching many files across many PRs
+- Feature work, migrations, or refactors spanning many sessions and PRs
+- Anything touching infrastructure or application code you'll open PRs against
 - Technical investigations where research and decisions accumulate
 - Anything with a Jira ticket and a plan document behind it
 
@@ -44,7 +44,7 @@ This structure pays off when work spans **multiple sessions** and involves **dec
 - A quick one-off fix or a single-session task
 - Simple questions answered in a single exchange
 
-If you're not sure, scaffold it anyway — `proj` takes seconds and the workspace stays out of your way if you don't need it. The cost of over-structuring a small task is low; the cost of under-structuring a large one is a Claude that loses the thread every session.
+If you're not sure, scaffold it anyway — `proj` takes seconds and stays out of your way if you don't need it.
 
 ---
 
@@ -125,8 +125,9 @@ proj spike --skills tdd,grill-with-docs
 ├── project.yaml               # source of truth: repos, tasks, Jira key
 ├── .gitignore                 # excludes repos/ and worktrees/
 ├── .claude/
-│   ├── skills/                # populated when --skills is passed
-│   └── settings.json          # hook wiring (created when journal/sync-status skills copied)
+│   ├── skills/                # bundled skills (when --skills is passed)
+│   ├── agents/                # bundled agents (e.g. security-reviewer)
+│   └── settings.json          # auto-wired hooks (journal, sync-status, repo, pr-security-review)
 ├── docs/
 │   ├── plans/                 # implementation plans (and local PRDs)
 │   ├── adr/                   # architectural decision records
@@ -356,7 +357,7 @@ Use it when starting implementation of any issue produced by `/to-issues`.
 
 ## Typical workflow
 
-These skills compose into a repeatable process from idea to shipped code.
+These skills compose into a repeatable process from idea to shipped code. Throughout, the `repo` skill keeps each task isolated in its own worktree, and the `pr-security-review` gate vets the diff with an independent agent before any PR opens.
 
 ### 1. Explore the idea — `/grill-with-docs`
 
@@ -372,7 +373,7 @@ Run `/to-issues` (or `/to-issues <prd-issue>`) to decompose the PRD into vertica
 
 ### 4. Implement each issue — `/tdd`
 
-Pick an issue and run `/tdd`. Claude confirms the public interface and which behaviors to test, then works through the implementation one test at a time. Each cycle: write a failing test, write minimal code to pass it, refactor.
+Pick an issue and run `/tdd` — working in a dedicated worktree created with `scripts/repo.sh worktree <task> <repo>`, so the base clone stays clean. Claude confirms the public interface and which behaviors to test, then works through the implementation one test at a time: write a failing test, write minimal code to pass it, refactor. When the work is ready, `gh pr create` triggers the independent security review before the PR opens.
 
 ### 5. Log events as they happen — `/journal`
 
