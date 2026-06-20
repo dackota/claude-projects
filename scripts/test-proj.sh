@@ -209,20 +209,51 @@ git -C "$CLS" checkout -q -b docs-only main
 echo "notes" > "$CLS/NOTES.md"; git -C "$CLS" add -A; git -C "$CLS" commit -qm docs
 assert "classify: docs only -> none"                "$([[ -z "$(classify)" ]] && echo true || echo false)"
 
-# ── pr-gate.sh: gates gh pr create on the SHA-keyed verdict ───────────────────
-SHA="$(git -C "$CLS" rev-parse HEAD)"
+# ── pr-gate.sh: gates gh pr create (size-aware + verdict-honoring) ────────────
+# Give the local repo an origin/main ref so the hook can resolve a base.
+git -C "$CLS" update-ref refs/remotes/origin/main "$(git -C "$CLS" rev-parse main)"
+git -C "$CLS" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 VERDICT_DIR="$CLS/.git/pr-security-review"
-prgate() { # prgate <command> -> exit code
+prgate() { # prgate <command> -> exit code (cwd = current branch in $CLS)
   local rc=0
   echo "{\"tool_input\":{\"command\":\"$1\"},\"cwd\":\"$CLS\"}" | bash "$PR_GATE" >/dev/null 2>&1 || rc=$?
   echo "$rc"
 }
+sha_of() { git -C "$CLS" rev-parse HEAD; }
+
+# Branches of varying size/dimension off main.
+git -C "$CLS" checkout -q -b small-code main
+printf 'print(1)\nprint(2)\n' > "$CLS/tiny.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm tiny
+git -C "$CLS" checkout -q -b big-code main
+{ for i in $(seq 1 40); do echo "line $i"; done; } > "$CLS/big.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm big
+git -C "$CLS" checkout -q -b tiny-infra main
+printf 'x = 1\n' > "$CLS/one.tf"; git -C "$CLS" add -A; git -C "$CLS" commit -qm onetf
+
 rm -rf "$VERDICT_DIR"
-assert "gate: blocks gh pr create w/o verdict"      "$([[ "$(prgate 'gh pr create --title x')" == "2" ]] && echo true || echo false)"
-mkdir -p "$VERDICT_DIR"; printf 'PASS\nCRITICAL:0 HIGH:1\n' > "$VERDICT_DIR/$SHA"
-assert "gate: allows on PASS verdict"               "$([[ "$(prgate 'gh pr create --title x')" == "0" ]] && echo true || echo false)"
-printf 'BLOCK\nCRITICAL:1\n' > "$VERDICT_DIR/$SHA"
-assert "gate: blocks on BLOCK verdict"              "$([[ "$(prgate 'gh pr create --title x')" == "2" ]] && echo true || echo false)"
+git -C "$CLS" checkout -q small-code
+assert "gate: skips small code-only diff"           "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+git -C "$CLS" checkout -q big-code
+assert "gate: blocks large code diff (no verdict)"  "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+git -C "$CLS" checkout -q tiny-infra
+assert "gate: blocks tiny infra diff (no verdict)"  "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+git -C "$CLS" checkout -q docs-only
+assert "gate: skips docs-only diff"                 "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+
+# A recorded verdict is honored regardless of size/dimension.
+mkdir -p "$VERDICT_DIR"
+git -C "$CLS" checkout -q big-code
+printf 'PASS\nCRITICAL:0 HIGH:1\n' > "$VERDICT_DIR/$(sha_of)"
+assert "gate: PASS verdict allows large diff"       "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+git -C "$CLS" checkout -q small-code
+printf 'BLOCK\nCRITICAL:1\n' > "$VERDICT_DIR/$(sha_of)"
+assert "gate: BLOCK verdict blocks small diff"      "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+
+# Env override raises the small-code threshold so a larger diff skips.
+git -C "$CLS" checkout -q big-code; rm -f "$VERDICT_DIR/$(sha_of)"
+export PR_SECURITY_MAX_SMALL_LINES=999
+assert "gate: PR_SECURITY_MAX_SMALL_LINES override" "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+unset PR_SECURITY_MAX_SMALL_LINES
+
 assert "gate: ignores non-create gh (pr list)"      "$([[ "$(prgate 'gh pr list')" == "0" ]] && echo true || echo false)"
 assert "gate: ignores non-gh commands"              "$([[ "$(prgate 'git status')" == "0" ]] && echo true || echo false)"
 
