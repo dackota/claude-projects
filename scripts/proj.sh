@@ -99,19 +99,19 @@ wire_skill_hooks() {
   [[ -f "$settings" ]] || echo '{}' > "$settings"
   case "$skill" in
     journal)
-      add_hook "$settings" PostToolUse "Write|Edit" "bash .claude/skills/journal/hooks/journal-check.sh" true "Journal entry may be needed"
-      add_hook "$settings" Stop "" "bash .claude/skills/journal/hooks/journal-stop.sh" true "Unlogged journal events detected"
+      add_hook "$settings" PostToolUse "Write|Edit" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-check.sh' true "Journal entry may be needed"
+      add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-stop.sh' true "Unlogged journal events detected"
       ;;
     sync-status)
-      add_hook "$settings" Stop "" "bash .claude/skills/sync-status/hooks/sync-status-stop.sh" true "STATUS.md is out of date"
+      add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/sync-status/hooks/sync-status-stop.sh' true "STATUS.md is out of date"
       ;;
     repo)
-      add_hook "$settings" PreToolUse "Bash"       "bash .claude/skills/repo/hooks/git-guard.sh"   false ""
-      add_hook "$settings" PreToolUse "Edit|Write" "bash .claude/skills/repo/hooks/repo-stale.sh"  false ""
-      add_hook "$settings" Stop       ""           "bash .claude/skills/repo/hooks/repo-stale-stop.sh" true "Stale worktrees detected"
+      add_hook "$settings" PreToolUse "Bash"       'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/repo/hooks/git-guard.sh'   false ""
+      add_hook "$settings" PreToolUse "Edit|Write" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/repo/hooks/repo-stale.sh'  false ""
+      add_hook "$settings" Stop       ""           'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/repo/hooks/repo-stale-stop.sh' true "Stale worktrees detected"
       ;;
     pr-security-review)
-      add_hook "$settings" PreToolUse "Bash" "bash .claude/skills/pr-security-review/hooks/pr-gate.sh" false ""
+      add_hook "$settings" PreToolUse "Bash" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/hooks/pr-gate.sh' false ""
       ;;
   esac
 }

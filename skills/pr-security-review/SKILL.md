@@ -42,7 +42,7 @@ records a verdict, and the gate honors a recorded verdict over any skip rule.
 
 2. **Classify the diff.** Run the bundled classifier:
    ```
-   bash .claude/skills/pr-security-review/classify.sh "$BASE"
+   bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/classify.sh "$BASE"
    ```
    It prints `code`, `infra`, both, or nothing. Map dimensions to checklists:
    `code → security-review`, `infra → cloud-infra-security`.

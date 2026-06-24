@@ -43,13 +43,22 @@ find_root() {
 in_managed() {
   local root; root="$(find_root "$cwd" 2>/dev/null || true)"
   if [[ -n "$root" ]]; then
+    # cwd physically under the workspace's repos/ or worktrees/
     case "$cwd/" in
       "$root/repos/"*|"$root/worktrees/"*) return 0 ;;
     esac
+    # command targets the workspace's managed dirs by absolute path
+    case "$cmd" in
+      *"$root/repos/"*|*"$root/worktrees/"*) return 0 ;;
+    esac
   fi
-  case "$cmd" in
-    *repos/*|*worktrees/*) return 0 ;;
-  esac
+  # command targets repos/ or worktrees/ by a RELATIVE path token, e.g.
+  # `git -C repos/x` or `cd worktrees/x && …`. Anchored to a path-arg boundary
+  # (start, whitespace, '=', or quote) so an unrelated absolute path that merely
+  # contains "repos/" (e.g. ~/Documents/repos/other-repo) does NOT match.
+  if printf '%s' "$cmd" | grep -Eq '(^|[[:space:]="'\''])(repos|worktrees)/'; then
+    return 0
+  fi
   return 1
 }
 
