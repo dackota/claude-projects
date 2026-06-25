@@ -59,3 +59,16 @@ and stops to report conflicts rather than auto-resolving.
   blocked. The escape hatch is `repo.sh` itself, or running git outside those
   directories. Read-only git (`status`/`log`/`diff`/`fetch`/`show`) and
   file-level `git checkout -- <path>` remain unblocked.
+
+## Update — 2026-06-25: Stop-time staleness backstop removed
+
+The `Stop` hook `hooks/repo-stale-stop.sh` (the end-of-session sweep of *all*
+worktrees) is no longer wired by `proj.sh`. It fired on every stop regardless of
+whether a worktree was in use and — being `asyncRewake` — re-woke about
+already-resolved drift, producing stale/duplicate notifications. Staleness is now
+checked **point-of-use only**: the PreToolUse(`Edit|Write`) `repo-stale.sh` hook
+warns when a worktree is about to be edited (scoped to that worktree). The repo
+skill therefore wires **two** hooks (PreToolUse `Bash` guard, PreToolUse
+`Edit|Write` staleness), superseding the "three hooks … `Stop`" wiring described
+above. The `repo-stale-stop.sh` script remains in the bundle, unregistered, so a
+session-level sweep can be re-enabled if ever wanted.

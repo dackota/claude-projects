@@ -59,8 +59,12 @@ Make the discipline mechanical via a new bundled `repo` skill:
   `behind` count vs base; if stale, exit 2 to warn before work proceeds. Deduped
   per session+worktree via a marker file (never per-edit).
 
-- **`hooks/repo-stale-stop.sh`** — `Stop` hook. Summarizes any stale worktrees
-  as an end-of-session backstop.
+- **`hooks/repo-stale-stop.sh`** — `Stop` hook summarizing stale worktrees as an
+  end-of-session backstop. **Removed from the default wiring (2026-06-25):** it
+  swept *all* worktrees on every stop regardless of whether one was in use (and,
+  via `asyncRewake`, re-fired about already-resolved drift). Staleness is now
+  checked point-of-use only through `repo-stale.sh`. The script is retained but
+  unregistered; see ADR 0002's 2026-06-25 update.
 
 **State model (hybrid):** repos are durable and declared in `project.yaml`
 `repos` (`name`, `url`, `path`, `default_branch`). Worktrees are ephemeral and
