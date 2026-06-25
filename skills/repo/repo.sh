@@ -6,8 +6,11 @@
 #
 # Usage:
 #   repo.sh clone <url> [name]            Clone into repos/<name>, register in project.yaml
-#   repo.sh worktree <task> <repo> [url]  Create worktrees/<task>/<repo> on branch <task>
-#   repo.sh sync <task> [repo]            Fetch + merge origin/<base> into the worktree(s)
+#   repo.sh worktree <task> <repo> [url] [--onto <parent>]
+#                                         Create worktrees/<task>/<repo> on branch <task>;
+#                                         stack on <parent>'s branch (or auto-derive from a
+#                                         single unmerged blocked_by), else branch off base
+#   repo.sh sync <task> [repo]            Fetch + merge the base (or the stacked parent) in
 #   repo.sh status [task]                 Live drift/dirty report for worktrees
 #   repo.sh remove <task> [repo] [--force] Remove worktree(s) + delete local branch
 #   repo.sh list                          List registered repos
@@ -82,6 +85,46 @@ base_branch() {  # base_branch <repo-name>
   echo "${b:-main}"
 }
 
+# Status of a task in project.yaml (empty if the id is not a task).
+task_status() {  # task_status <task-id>
+  local v
+  v="$(yq e ".tasks[] | select(.id == \"$1\") | .status" "$PROJECT_YAML" 2>/dev/null || true)"
+  [[ "$v" == "null" ]] && v=""
+  echo "$v"
+}
+
+# The branch a task should stack on, auto-derived from its blocked_by: echoes the
+# parent branch name when exactly one blocker has a live local branch not yet
+# merged into the base; empty when none, or when several qualify (ambiguous).
+auto_stack_parent() {  # auto_stack_parent <task> <clone> <base>
+  local task="$1" clone="$2" base="$3" blockers parent="" b count=0
+  blockers="$(yq e -r ".tasks[] | select(.id == \"$task\") | .blocked_by[]?" "$PROJECT_YAML" 2>/dev/null || true)"
+  [[ -z "$blockers" ]] && return 0
+  while IFS= read -r b; do
+    [[ -z "$b" ]] && continue
+    git -C "$clone" show-ref --verify --quiet "refs/heads/$b" || continue       # live branch?
+    git -C "$clone" merge-base --is-ancestor "$b" "origin/$base" 2>/dev/null && continue  # already merged?
+    parent="$b"; count=$((count + 1))
+  done <<< "$blockers"
+  if [[ "$count" -gt 1 ]]; then
+    # >&2 is required: this function runs inside $(...), so stdout is the return
+    # value (the parent branch) — the warning must not contaminate it.
+    warn "Task '$task' has multiple unmerged blockers with live branches; not auto-stacking. Use --onto <task>." >&2
+    return 0
+  fi
+  echo "$parent"
+}
+
+# A worktree's stacked parent branch, or empty when it tracks origin/<base>.
+# The stack relationship lives in git: a stacked branch's upstream is a *local*
+# branch (the parent); an ordinary worktree tracks origin/<base>.
+stacked_parent() {  # stacked_parent <worktree>
+  local up
+  up="$(git -C "$1" rev-parse --abbrev-ref '@{u}' 2>/dev/null || true)"
+  if [[ -n "$up" && "$up" != origin/* ]]; then echo "$up"; fi
+  return 0
+}
+
 # ── commands ──────────────────────────────────────────────────────────────────
 cmd_clone() {
   local url="${1:-}" name="${2:-}"
@@ -106,8 +149,15 @@ cmd_clone() {
 }
 
 cmd_worktree() {
-  local task="${1:-}" repo="${2:-}" url="${3:-}"
-  [[ -z "$task" || -z "$repo" ]] && die "Usage: repo.sh worktree <task> <repo> [url]"
+  local task="" repo="" url="" onto="" args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --onto) onto="${2:-}"; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  task="${args[0]:-}"; repo="${args[1]:-}"; url="${args[2]:-}"
+  [[ -z "$task" || -z "$repo" ]] && die "Usage: repo.sh worktree <task> <repo> [url] [--onto <parent>]"
 
   local clone="$REPOS_DIR/$repo"
   # Auto-clone if the repo isn't present yet.
@@ -128,10 +178,26 @@ cmd_worktree() {
     return 0
   fi
 
+  # Resolve the branch to stack on: explicit --onto wins; otherwise auto-derive
+  # from the task's single unmerged blocker (if any). Empty => branch off base.
+  local parent=""
+  if [[ -n "$onto" ]]; then
+    git -C "$clone" show-ref --verify --quiet "refs/heads/$onto" \
+      || die "--onto '$onto': no such branch in repo '$repo'. Create its worktree first."
+    parent="$onto"
+  else
+    parent="$(auto_stack_parent "$task" "$clone" "$base")"
+  fi
+
   mkdir -p "$WORKTREES_DIR/$task"
   if git -C "$clone" show-ref --verify --quiet "refs/heads/$task"; then
     info "Adding worktree on existing branch '$task': worktrees/$task/$repo"
     git -C "$clone" worktree add "$wt" "$task"
+  elif [[ -n "$parent" ]]; then
+    info "Stacking '$task' on '$parent': worktrees/$task/$repo"
+    git -C "$clone" worktree add -b "$task" "$wt" "$parent"
+    # Record the stack in git: the child branch's upstream IS the parent branch.
+    git -C "$clone" branch --set-upstream-to="$parent" "$task" >/dev/null || true
   else
     info "Adding worktree on new branch '$task' off origin/$base: worktrees/$task/$repo"
     git -C "$clone" worktree add -b "$task" "$wt" "origin/$base"
@@ -144,7 +210,7 @@ cmd_sync() {
   local task_dir="$WORKTREES_DIR/$task"
   [[ -d "$task_dir" ]] || die "No worktrees for task '$task' (looked in worktrees/$task)."
 
-  local found=false rc=0 wt repo base
+  local found=false rc=0 wt repo base parent target
   for wt in "$task_dir"/*; do
     [[ -e "$wt/.git" ]] || continue
     repo="$(basename "$wt")"
@@ -152,7 +218,6 @@ cmd_sync() {
     found=true
     base="$(base_branch "$repo")"
 
-    info "Syncing worktrees/$task/$repo (merge origin/$base)"
     git -C "$wt" fetch --all --prune
 
     if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
@@ -160,8 +225,19 @@ cmd_sync() {
       rc=1; continue
     fi
 
-    if git -C "$wt" merge "origin/$base"; then
-      info "worktrees/$task/$repo is up to date with origin/$base"
+    # A stacked worktree tracks its parent branch until the parent merges into
+    # the base, at which point it re-points to origin/<base> (the PR retargets).
+    parent="$(stacked_parent "$wt")"
+    if [[ -n "$parent" ]] && git -C "$wt" merge-base --is-ancestor "$parent" "origin/$base" 2>/dev/null; then
+      info "worktrees/$task/$repo: parent '$parent' merged into $base — re-pointing to origin/$base"
+      git -C "$wt" branch --set-upstream-to="origin/$base" >/dev/null 2>&1 || true
+      parent=""
+    fi
+    if [[ -n "$parent" ]]; then target="$parent"; else target="origin/$base"; fi
+
+    info "Syncing worktrees/$task/$repo (merge $target)"
+    if git -C "$wt" merge "$target"; then
+      info "worktrees/$task/$repo is up to date with $target"
     else
       error "Merge conflict in worktrees/$task/$repo. Conflicted files:"
       git -C "$wt" diff --name-only --diff-filter=U | sed 's/^/    /' >&2
@@ -181,7 +257,7 @@ cmd_status() {
   fi
 
   shopt -s nullglob
-  local printed_header=false wt task repo branch base behind ahead dirty flag
+  local printed_header=false wt task repo branch base behind ahead dirty flag parent against
   local fetched=" "  # space-delimited set of already-fetched repo names (bash 3.2 safe)
   for wt in "$WORKTREES_DIR"/*/*; do
     [[ -e "$wt/.git" ]] || continue
@@ -197,15 +273,23 @@ cmd_status() {
 
     branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
     base="$(base_branch "$repo")"
-    behind="$(git -C "$wt" rev-list --count "HEAD..origin/$base" 2>/dev/null || echo 0)"
-    ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
+    # A stacked worktree drifts against its parent branch, not the base.
+    parent="$(stacked_parent "$wt")"
+    if [[ -n "$parent" ]]; then against="$parent"; else against="origin/$base"; fi
+    behind="$(git -C "$wt" rev-list --count "HEAD..$against" 2>/dev/null || echo 0)"
+    ahead="$(git -C "$wt" rev-list --count "$against..HEAD" 2>/dev/null || echo 0)"
     dirty="$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
     flag=""
     [[ "${behind:-0}" -gt 0 ]] && flag="  ⚠ STALE"
+    # A stacked child whose parent task reopened (done -> active) is building on
+    # shifting ground — surface it loudly; we never auto-rebase the stack.
+    if [[ -n "$parent" && "$(task_status "$parent")" == "active" ]]; then
+      flag="${flag}  ⚠ BASE REOPENED"
+    fi
 
     if ! $printed_header; then
       echo ""
-      printf "  %-22s %-22s %-14s %s\n" "WORKTREE" "BRANCH" "vs origin/base" "DIRTY"
+      printf "  %-22s %-22s %-14s %s\n" "WORKTREE" "BRANCH" "vs base/parent" "DIRTY"
       printed_header=true
     fi
     printf "  %-22s %-22s -%-3s +%-8s %-4s%s\n" \
