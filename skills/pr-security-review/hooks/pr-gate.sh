@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash) hook: gate `gh pr create` on a security review.
+# PreToolUse(Bash) hook: gate `gh pr create` on the unified PR review
+# (acceptance + security).
 #
 # Decision order for the current HEAD commit:
 #   1. A verdict already recorded (manual or prior run) -> honor it (PASS allow,
 #      BLOCK block). A manual `/pr-security-review` therefore always wins.
-#   2. No verdict, infra files in the diff -> require review (any size — a
+#   2. No verdict, branch is a task in the workspace project.yaml (a slice PR) ->
+#      require review: every slice is acceptance-validated, any size. If the
+#      branch is not a task, warn that acceptance was skipped and fall through to
+#      the security rules below (warn-and-fall-back).
+#   3. No verdict, infra files in the diff -> require review (any size — a
 #      one-line IAM/security-group/bucket change is the small-but-critical case).
-#   3. No verdict, no security-relevant files (docs/config only) -> allow.
-#   4. No verdict, code-only and <= PR_SECURITY_MAX_SMALL_LINES (default 25)
+#   4. No verdict, no security-relevant files (docs/config only) -> allow.
+#   5. No verdict, code-only and <= PR_SECURITY_MAX_SMALL_LINES (default 25)
 #      changed lines -> allow (small change skips; review still available by
 #      running the pr-security-review skill manually).
-#   5. Otherwise (larger code change) -> require review.
+#   6. Otherwise (larger code change) -> require review.
 #
 # Reads the Claude Code PreToolUse payload (JSON) on stdin.
 
@@ -23,7 +28,7 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null || true)"
 # Only gate PR creation.
 printf '%s' "$cmd" | grep -Eq 'gh[[:space:]]+pr[[:space:]]+create' || exit 0
 
-block() { echo "🔒 PR security gate: $1" >&2; exit 2; }
+block() { echo "🔒 PR review gate: $1" >&2; exit 2; }
 
 cwd="${cwd:-$PWD}"
 gitdir="$(git -C "$cwd" rev-parse --absolute-git-dir 2>/dev/null || true)"
@@ -37,11 +42,31 @@ if [[ -f "$verdict_file" ]]; then
   verdict="$(head -n1 "$verdict_file" 2>/dev/null || echo BLOCK)"
   case "$verdict" in
     PASS) exit 0 ;;
-    *)    block "security review found CRITICAL issue(s) for HEAD ($sha). Fix them — the fix is a new commit, which re-reviews automatically — then re-run gh pr create." ;;
+    *)    block "PR review found CRITICAL issue(s) for HEAD ($sha). Fix them — the fix is a new commit, which re-reviews automatically — then re-run gh pr create." ;;
   esac
 fi
 
-# No verdict yet — decide whether this change is exempt.
+# No verdict yet.
+# 2. Acceptance: in a workspace, a branch that is a task is a slice PR and must be
+#    acceptance-validated at any size. Off-convention branches warn and fall back.
+ws=""; d="$cwd"
+while [[ "$d" != "/" ]]; do
+  [[ -f "$d/project.yaml" ]] && { ws="$d"; break; }
+  d="$(dirname "$d")"
+done
+if [[ -n "$ws" ]]; then
+  branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  # Escape regex metacharacters so a branch like `feat.v2` can't false-match a
+  # different task id (`.` is a regex wildcard in the pattern below).
+  branch_re="$(printf '%s' "$branch" | sed 's/[^[:alnum:]_-]/\\&/g')"
+  if [[ -n "$branch" ]] && grep -qE "id:[[:space:]]*\"?${branch_re}\"?[[:space:]]*$" "$ws/project.yaml" 2>/dev/null; then
+    block "slice '$branch' needs a unified PR review (acceptance + security). Run the pr-security-review skill, then re-run gh pr create."
+  else
+    echo "🔓 PR review gate: acceptance validation skipped — branch '${branch:-?}' is not a task in project.yaml; applying security rules only." >&2
+  fi
+fi
+
+# Decide whether the security lens is exempt.
 MAX="${PR_SECURITY_MAX_SMALL_LINES:-25}"
 
 base="$(git -C "$cwd" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
@@ -54,15 +79,15 @@ if ! dims="$( cd "$cwd" && bash "$classify" "$base" 2>/dev/null )"; then
   block "couldn't classify the diff — run the pr-security-review skill manually to review before opening the PR."
 fi
 
-# 2. Infra (even one line) always requires review.
+# 3. Infra (even one line) always requires review.
 case " $dims " in
   *" infra "*) block "infra changes require a security review at any size. Run the pr-security-review skill, then re-run gh pr create." ;;
 esac
 
-# 3. No security-relevant files (docs/config only) -> allow.
+# 4. No security-relevant files (docs/config only) -> allow.
 [[ -z "${dims// /}" ]] && exit 0
 
-# 4/5. Code-only: skip when small, else require review.
+# 5/6. Code-only: skip when small, else require review.
 mb="$(git -C "$cwd" merge-base "$base" HEAD 2>/dev/null || echo "$base")"
 stat="$(git -C "$cwd" diff --shortstat "$mb...HEAD" 2>/dev/null || true)"
 ins="$(printf '%s' "$stat" | grep -oE '[0-9]+ insertion' | grep -oE '^[0-9]+' || true)"
