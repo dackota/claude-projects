@@ -173,6 +173,27 @@ post_install_skill() {
   return 0
 }
 
+# Companion skills a skill orchestrates and cannot function without.
+# skill_deps <skill> -> echoes space-separated dependency skill names
+# Note: `codebase-researcher` is intentionally NOT a dep of `next` — it's an
+# optional detour, never force-installed (install it explicitly or via `--skills`).
+skill_deps() {
+  case "$1" in
+    next) echo "grill-with-docs to-prd to-issues tdd" ;;
+    *) ;;
+  esac
+}
+
+# Expand a skill list to include each skill's dependencies, deduped and
+# order-preserving. expand_skill_deps <skill...> -> echoes the expanded list.
+expand_skill_deps() {
+  local s d
+  for s in "$@"; do
+    echo "$s"
+    for d in $(skill_deps "$s"); do echo "$d"; done
+  done | awk '!seen[$0]++' | tr '\n' ' '
+}
+
 # ── embedded CLAUDE.md ───────────────────────────────────────────────────────
 # This heredoc is the canonical CLAUDE.md for all scaffolded projects.
 # Update this when the template changes; new-project is self-contained.
@@ -189,6 +210,12 @@ that holds it (the *where*).
 Read `STATUS.md` first every session before opening any other file. It is a
 ~500-token synthesis of current project state. If it is absent, run
 `/sync-status` to generate it.
+
+When the `next` skill is installed (`proj --skills`), then run `/next` after
+reading `STATUS.md`: it determines the current lifecycle phase from workspace
+state and recommends (and routes to) the next action, so you never have to recall
+the `grill-with-docs → to-prd → to-issues → tdd` sequence yourself. You can also
+run `/next` any time mid-session to ask "where am I / what's next?".
 
 ## Project Structure
 
@@ -222,8 +249,8 @@ operations MUST go through `scripts/repo.sh`. A PreToolUse guard hook blocks raw
 
 ```
 scripts/repo.sh clone <url> [name]             # clone into repos/, register in project.yaml
-scripts/repo.sh worktree <task> <repo> [url]   # start work: worktrees/<task>/<repo> on branch <task>
-scripts/repo.sh sync <task> [repo]             # merge origin/<base> in (worktrees drift while you work)
+scripts/repo.sh worktree <task> <repo> [--onto <parent>]  # start work; stack on <parent> or auto-derive from blocked_by
+scripts/repo.sh sync <task> [repo]             # merge the base (or stacked parent) in (worktrees drift while you work)
 scripts/repo.sh status [task]                  # see how far behind/ahead each worktree is
 scripts/repo.sh remove <task> [repo]           # remove worktree + delete local branch (safe by default)
 scripts/repo.sh list                           # registered repos
@@ -233,22 +260,42 @@ Worktrees go stale as their base branch advances. Run `scripts/repo.sh status`
 before relying on one, and `scripts/repo.sh sync` to catch it up — the guard's
 staleness hook also warns before the first edit in a stale worktree.
 
-## Pull requests — independent security review first
+**Stacked work — don't stall on review.** When a task depends on another that is
+still in review (its branch exists but isn't merged), stack the new worktree on
+that branch instead of waiting: `repo.sh worktree <task> <repo> --onto <parent>`,
+or just `repo.sh worktree <task> <repo>` when the task has exactly one unmerged
+blocker in `project.yaml` (auto-derived). The stack pointer is the branch's git
+upstream — `sync` then merges the parent's review-fix commits, and re-points to
+the base automatically once the parent merges (the stacked PR retargets). If a
+stacked parent is **reopened** (e.g. a validator loop-back flips it back to
+`active`), `repo.sh status` flags the child as **BASE REOPENED** — it is building
+on shifting ground; `repo.sh` never auto-rebases a disturbed stack, so reconcile
+it deliberately.
+
+## Pull requests — independent review first (acceptance + security)
 
 When the `pr-security-review` skill is installed (`proj --skills`), `gh pr create`
-is gated. The `pr-security-review` skill classifies the diff (code/infra), spawns
-a fresh `security-reviewer` agent (which never saw the implementation), records a
-verdict under `.git/pr-security-review/<sha>`, and folds findings into the PR body.
-CRITICAL findings block the PR until fixed (each fix is a new commit, which
-re-reviews automatically); HIGH/MEDIUM/LOW pass but are noted in the PR body.
+is gated by a **unified PR-review gate**. The skill runs two independent agents
+(neither of which saw the implementation) on the diff, in order:
 
-The gate does not fire on every PR. With no recorded verdict it requires review
-when the diff touches **infra** (any size) or is a **code change over
-`PR_SECURITY_MAX_SMALL_LINES` lines** (default 25); small code-only and
-docs-only diffs pass automatically. You can always run the `pr-security-review`
-skill by hand to review a skipped change — a recorded verdict is honored over any
-skip rule. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI
-bypass it.
+1. **Acceptance** — `implementation-validator` checks the slice's diff against its
+   task's acceptance criteria. A CRITICAL gap (a promised behavior undelivered)
+   blocks and **loops back**: the task flips `done → active` and re-enters `tdd`.
+2. **Security** — `security-reviewer` checks the change against the code/infra
+   checklists.
+
+It records **one** verdict under `.git/pr-security-review/<sha>` and folds both
+lenses into the PR body. CRITICAL (either lens) blocks until fixed (each fix is a
+new commit, which re-reviews automatically); HIGH/MEDIUM/LOW are noted but pass.
+
+When does the gate require a review (no recorded verdict)? **Acceptance** applies
+to every **slice PR** — a branch that is a task in `project.yaml`, any size; if
+the branch isn't a task it warns and falls back to security only. **Security**
+applies when the diff touches **infra** (any size) or is a **code change over
+`PR_SECURITY_MAX_SMALL_LINES` lines** (default 25); small code-only and docs-only
+diffs skip the security lens. You can always run the `pr-security-review` skill by
+hand — a recorded verdict is honored over any skip rule. The gate covers CLI
+`gh pr create` only — `--web` and the GitHub UI bypass it.
 
 ## CONTEXT.md — domain glossary
 
@@ -678,6 +725,11 @@ if $COPY_SKILLS; then
   else
     SKILLS_TO_COPY="$(ls -1 "$SKILLS_SRC" 2>/dev/null | tr '\n' ' ')"
   fi
+
+  # Pull in companion skills an orchestrator skill depends on (e.g. `next`).
+  # (Install-time only — `update-skills` deliberately updates just what's asked,
+  # not transitive deps, so an explicit skill list there is honored verbatim.)
+  SKILLS_TO_COPY="$(expand_skill_deps $SKILLS_TO_COPY)"
 
   if [[ ! -d "$SKILLS_SRC" ]]; then
     warn "--skills requested but skills directory not found: $SKILLS_SRC"
