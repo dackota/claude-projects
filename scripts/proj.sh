@@ -103,12 +103,18 @@ wire_skill_hooks() {
       add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-stop.sh' true "Unlogged journal events detected"
       ;;
     sync-status)
-      add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/sync-status/hooks/sync-status-stop.sh' true "STATUS.md is out of date"
+      # Synchronous (no asyncRewake): block once at the real stop when STATUS.md
+      # is staler than journal.yaml, so the fix happens before the session ends.
+      # asyncRewake re-woke about already-resolved state (stale/duplicate fires).
+      add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/sync-status/hooks/sync-status-stop.sh' false ""
       ;;
     repo)
       add_hook "$settings" PreToolUse "Bash"       'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/repo/hooks/git-guard.sh'   false ""
+      # Staleness is checked point-of-use only: the PreToolUse(Edit|Write) hook
+      # warns when a worktree is about to be edited (scoped to that worktree).
+      # No blanket Stop-time sweep of all worktrees — that fired on every stop
+      # regardless of whether a worktree was being used, which was too noisy.
       add_hook "$settings" PreToolUse "Edit|Write" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/repo/hooks/repo-stale.sh'  false ""
-      add_hook "$settings" Stop       ""           'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/repo/hooks/repo-stale-stop.sh' true "Stale worktrees detected"
       ;;
     pr-security-review)
       add_hook "$settings" PreToolUse "Bash" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/hooks/pr-gate.sh' false ""

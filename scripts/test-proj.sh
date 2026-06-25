@@ -95,10 +95,10 @@ count_cmd() { jq "[.. | objects | select(has(\"command\")) | select(.command|tes
 
 assert "settings: PreToolUse git-guard wired"       "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
 assert "settings: PreToolUse repo-stale wired"      "$([[ "$(count_cmd 'repo-stale\\.sh')" == "1" ]] && echo true || echo false)"
-assert "settings: Stop repo-stale-stop wired"       "$([[ "$(count_cmd repo-stale-stop)" == "1" ]] && echo true || echo false)"
+assert "settings: Stop repo-stale-stop NOT wired"   "$([[ "$(count_cmd repo-stale-stop)" == "0" ]] && echo true || echo false)"
 assert "settings: journal hooks preserved"          "$([[ "$(count_cmd journal-check)" == "1" ]] && echo true || echo false)"
 assert "settings: sync-status hook preserved"       "$([[ "$(count_cmd sync-status-stop)" == "1" ]] && echo true || echo false)"
-# All Stop hooks (journal, sync-status, repo) share one matcher group
+# All Stop hooks (journal, sync-status) share one matcher group
 STOP_GROUPS="$(jq '[.hooks.Stop[] | select(.matcher=="")] | length' "$SETTINGS")"
 assert "settings: single Stop matcher group"        "$([[ "$STOP_GROUPS" == "1" ]] && echo true || echo false)"
 
