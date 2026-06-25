@@ -151,6 +151,59 @@ if command -v yq >/dev/null 2>&1; then
   repo remove TASK-1 >/dev/null 2>&1
   assert "repo.sh remove: worktree gone"            "$([[ ! -d $RT/worktrees/TASK-1 ]] && echo true || echo false)"
   assert "repo.sh remove: local branch deleted"     "$(! git -C "$RT/repos/remote" show-ref --verify --quiet refs/heads/TASK-1 && echo true || echo false)"
+
+  # ── stacked worktrees ───────────────────────────────────────────────────────
+  wt_commit() { # wt_commit <worktree> <file> <content> <msg>
+    echo "$3" > "$1/$2"
+    git -C "$1" add -A
+    git -C "$1" -c user.email=t@t.test -c user.name=T -c commit.gpgsign=false commit -qm "$4"
+  }
+  # Seed a parent task (in review = done) and a child that depends on it.
+  yq e -i '.tasks = [
+    {"id":"slice-1","title":"parent","type":"AFK","status":"done","blocked_by":[]},
+    {"id":"slice-2","title":"child","type":"AFK","status":"todo","blocked_by":["slice-1"]}
+  ]' "$RT/project.yaml"
+
+  repo worktree slice-1 remote >/dev/null 2>&1
+  wt_commit "$RT/worktrees/slice-1/remote" p.txt "parent-work" "parent work"
+
+  # Child stacked on the in-review parent via --onto.
+  repo worktree slice-2 remote --onto slice-1 >/dev/null 2>&1
+  CHILD="$RT/worktrees/slice-2/remote"
+  assert "stack: child worktree created"            "$([[ -d $CHILD ]] && echo true || echo false)"
+  assert "stack: child upstream is parent branch"   "$([[ "$(git -C "$CHILD" rev-parse --abbrev-ref '@{u}' 2>/dev/null)" == "slice-1" ]] && echo true || echo false)"
+  assert "stack: child built on parent work"        "$(git -C "$CHILD" merge-base --is-ancestor slice-1 HEAD 2>/dev/null && echo true || echo false)"
+
+  # sync cascades the parent's new review-fix commits into the child.
+  wt_commit "$RT/worktrees/slice-1/remote" p2.txt "more" "parent work 2"
+  P2="$(git -C "$RT/worktrees/slice-1/remote" rev-parse HEAD)"
+  repo sync slice-2 >/dev/null 2>&1
+  assert "stack: sync cascades parent commits"      "$(git -C "$CHILD" merge-base --is-ancestor "$P2" HEAD 2>/dev/null && echo true || echo false)"
+
+  # Auto-derive: a task with exactly one unmerged blocker (live branch) stacks.
+  yq e -i '.tasks += [{"id":"slice-3","title":"auto","type":"AFK","status":"todo","blocked_by":["slice-1"]}]' "$RT/project.yaml"
+  repo worktree slice-3 remote >/dev/null 2>&1
+  C3="$RT/worktrees/slice-3/remote"
+  assert "stack: auto-derive single blocker"        "$([[ "$(git -C "$C3" rev-parse --abbrev-ref '@{u}' 2>/dev/null)" == "slice-1" ]] && echo true || echo false)"
+
+  # No blockers -> ordinary worktree off base, not stacked.
+  yq e -i '.tasks += [{"id":"slice-free","title":"free","type":"AFK","status":"todo","blocked_by":[]}]' "$RT/project.yaml"
+  repo worktree slice-free remote >/dev/null 2>&1
+  CF="$RT/worktrees/slice-free/remote"
+  assert "stack: no blockers -> not stacked"        "$([[ "$(git -C "$CF" rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo none)" != "slice-1" ]] && echo true || echo false)"
+
+  # Base reopened: parent task flips done -> active; status flags the stacked child.
+  yq e -i '(.tasks[] | select(.id=="slice-1") | .status) = "active"' "$RT/project.yaml"
+  STK_STATUS="$(repo status 2>/dev/null)"
+  assert "stack: status flags BASE REOPENED"        "$(echo "$STK_STATUS" | grep -q 'BASE REOPENED' && echo true || echo false)"
+
+  # Parent merges into base on the remote; child sync re-points upstream to base.
+  git -C "$RT/repos/remote" push -q origin slice-1
+  git -C "$SEED" fetch -q origin
+  git -C "$SEED" -c user.email=t@t.test -c user.name=T -c commit.gpgsign=false merge -q --no-edit origin/slice-1
+  git -C "$SEED" push -q origin main
+  repo sync slice-2 >/dev/null 2>&1
+  assert "stack: re-points to base after merge"     "$([[ "$(git -C "$CHILD" rev-parse --abbrev-ref '@{u}' 2>/dev/null)" == "origin/main" ]] && echo true || echo false)"
 else
   echo "  (skipping repo.sh lifecycle tests — yq not installed)"
 fi
@@ -256,6 +309,43 @@ unset PR_SECURITY_MAX_SMALL_LINES
 
 assert "gate: ignores non-create gh (pr list)"      "$([[ "$(prgate 'gh pr list')" == "0" ]] && echo true || echo false)"
 assert "gate: ignores non-gh commands"              "$([[ "$(prgate 'git status')" == "0" ]] && echo true || echo false)"
+
+# ── unified PR gate: acceptance via task derivation + warn-fallback ───────────
+assert "pr-review: implementation-validator agent"  "$([[ -f $RT/.claude/agents/implementation-validator.md ]] && echo true || echo false)"
+
+if command -v yq >/dev/null 2>&1 && [[ -d "$RT/worktrees/slice-2/remote" ]]; then
+  WT2="$RT/worktrees/slice-2/remote"
+  WT2_GITDIR="$(git -C "$WT2" rev-parse --absolute-git-dir)"
+  WT2_SHA="$(git -C "$WT2" rev-parse HEAD)"
+  prg() { # prg <command> <cwd> -> exit code
+    local rc=0
+    echo "{\"tool_input\":{\"command\":\"$1\"},\"cwd\":\"$2\"}" | bash "$PR_GATE" >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+  }
+  # Branch 'slice-2' is a task in project.yaml -> acceptance applies -> require review.
+  rm -f "$WT2_GITDIR/pr-security-review/$WT2_SHA"
+  assert "gate: slice task requires review"          "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "2" ]] && echo true || echo false)"
+  # A recorded PASS verdict lets the slice PR through.
+  mkdir -p "$WT2_GITDIR/pr-security-review"
+  printf 'PASS\nACCEPTANCE PASS C:0 H:0 M:0 L:0\nSECURITY PASS C:0 H:0 M:0 L:0\n' > "$WT2_GITDIR/pr-security-review/$WT2_SHA"
+  assert "gate: PASS verdict allows slice PR"        "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "0" ]] && echo true || echo false)"
+  # Off-convention branch (not a task) in a workspace -> warn that acceptance was skipped.
+  WARN_OUT="$(echo "{\"tool_input\":{\"command\":\"gh pr create -t x\"},\"cwd\":\"$RT/repos/remote\"}" | bash "$PR_GATE" 2>&1 1>/dev/null || true)"
+  assert "gate: non-task branch warns acceptance"    "$(echo "$WARN_OUT" | grep -qi 'acceptance' && echo true || echo false)"
+fi
+
+# ── next skill: orchestrator install + dependency resolution ──────────────────
+NT="${TMPDIR_BASE}/next-test"
+bash "$PROJ" "next-test" --dir "$TMPDIR_BASE" --skills next >/dev/null
+assert "next: skill dir copied"                     "$([[ -d $NT/.claude/skills/next ]] && echo true || echo false)"
+assert "next: companion grill-with-docs pulled"     "$([[ -d $NT/.claude/skills/grill-with-docs ]] && echo true || echo false)"
+assert "next: companion to-prd pulled"              "$([[ -d $NT/.claude/skills/to-prd ]] && echo true || echo false)"
+assert "next: companion to-issues pulled"           "$([[ -d $NT/.claude/skills/to-issues ]] && echo true || echo false)"
+assert "next: companion tdd pulled"                 "$([[ -d $NT/.claude/skills/tdd ]] && echo true || echo false)"
+assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
+# Scoping guard: dependency resolution is additive, not "install everything".
+assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"
+assert "next: does NOT pull unrelated repo"         "$([[ ! -d $NT/.claude/skills/repo ]] && echo true || echo false)"
 
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
