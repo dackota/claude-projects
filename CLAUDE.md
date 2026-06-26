@@ -8,7 +8,7 @@ This is a **bootstrap tool repo** — not a project workspace. It provides the `
 |------|---------|
 | `scripts/proj.sh` | CLI that scaffolds new project workspaces |
 | `scripts/test-proj.sh` | Smoke tests for `proj.sh` |
-| `skills/` | Skills bundled with this repo (can be copied into new projects via `--skills`) |
+| `skills/` | Skills bundled with this repo (bundled into new projects by default; `--no-skills` to opt out) |
 | `agents/` | Agent definitions a skill can pull in via its `agents:` frontmatter |
 | `README.md` | User-facing documentation |
 
@@ -33,7 +33,7 @@ Bundled skills:
 
 ## Working on this repo
 
-- **Adding a skill**: create `skills/<name>/SKILL.md` (+ any supporting `.md` files). No other changes needed — `proj --skills` picks up any skill in `skills/` by name.
+- **Adding a skill**: create `skills/<name>/SKILL.md` (+ any supporting `.md` files). No other changes needed — `proj` bundles any skill in `skills/` by default (and `--skills <name>` picks it up by name).
 - **Hook-bearing skills** (`journal`, `sync-status`, `repo`, `pr-security-review`) are special-cased in `wire_skill_hooks()` / `post_install_skill()` in `scripts/proj.sh`, which idempotently merge their hooks into the workspace's `.claude/settings.json` (and, for `repo`, copy `repo.sh` out to `scripts/`). Wire a new hook-bearing skill there.
 - **Agent-bearing skills**: a skill declares the agents it needs via an `agents:` list in its `SKILL.md` frontmatter. `install_skill_agents()` reads that with `yq` and copies the named `agents/<name>.md` into the workspace's `.claude/agents/` (auto-discovered, no wiring). Add new agents under `agents/`.
 - **`security-review` & `cloud-infra-security`** are the canonical sources for those skills; `~/.claude/skills/<name>` are symlinks back to them.
@@ -44,9 +44,9 @@ Bundled skills:
 ## proj CLI quick reference
 
 ```
-proj <name>                     # scaffold a bare workspace
-proj <name> --skills            # scaffold + copy all bundled skills to .claude/skills/
-proj <name> --skills tdd,grill-with-docs  # scaffold + copy specific skills
+proj <name>                     # scaffold + bundle all skills (default)
+proj <name> --no-skills         # scaffold without bundling skills
+proj <name> --skills tdd,grill-with-docs  # scaffold + bundle a specific subset
 proj <name> --jira KEY          # include Jira key in project.yaml
 proj --dry-run <name>           # preview without writing
 proj --show-claude-md           # print the embedded CLAUDE.md template
