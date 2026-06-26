@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development with red-green-refactor loop. The main session orchestrates — it plans the slice, then spawns a Sonnet tdd-implementer sub-agent to run the implementation loop, and reviews the result. Use when user wants to build features or fix bugs using TDD, mentions "red-green-refactor", wants integration tests, or asks for test-first development.
+description: Test-driven development with red-green-refactor loop. When a human invokes /tdd directly it runs inline in the main agent (interactive — plan + drive the loop yourself). When /next builds a task it instead spawns the Sonnet tdd-implementer sub-agent to complete it (both AFK and HITL). Use when user wants to build features or fix bugs using TDD, mentions "red-green-refactor", wants integration tests, or asks for test-first development.
 origin: claude-projects
 agents:
   - tdd-implementer
@@ -8,27 +8,24 @@ agents:
 
 # Test-Driven Development
 
-## Orchestration model
+## How this skill runs
 
-In a project workspace this skill runs as a **two-role split**:
+`/tdd` runs in one of two modes, decided by **who invoked it**:
 
-- **You (the main session) orchestrate.** You pick the task, design the slice's
-  interface and behavior list, hold the planning gate with the user where needed,
-  then **delegate the red-green-refactor loop to a Sonnet `tdd-implementer`
-  sub-agent**, review what it returns, and close the task out. You own the
-  lifecycle (status flips, refactor judgment, the validation doc).
-- **The `tdd-implementer` (Sonnet) implements.** Spawned fresh per slice, it gets
-  the agreed plan and the task's acceptance criteria, runs the TDD loop one
-  behavior at a time, and returns a structured summary. It does not talk to the
-  user or touch task status.
+- **Main-agent mode (interactive)** — a human invoked `/tdd` directly, ad hoc. You
+  run the whole cycle **in this session**: plan the slice (confirming the interface
+  and behaviors with the user), drive RED→GREEN→refactor yourself so they can watch
+  and steer, and close it out. This is what the workflow below describes.
+- **Subagent mode (orchestrated)** — `/next` is building a task. It does **not**
+  run this skill inline; it spawns the Sonnet **`tdd-implementer`** sub-agent on a
+  fresh context to run the loop, then reviews the structured summary it returns.
+  This applies to **both AFK and HITL** tasks — for a HITL task the orchestrator
+  gathers the user's input at the planning gate first, then hands the cleared plan
+  to the sub-agent. (See `/next`'s Build arc for how it dispatches.)
 
-This keeps human-facing planning and orchestration on the main model while the
-mechanical implementation tokens go to Sonnet. The standards below are the
-contract the implementer follows **and** the bar you review its output against.
-
-> For a quick, throwaway TDD cycle outside a project workspace you can run the
-> loop yourself — but inside a workspace, delegate it so each slice gets a fresh,
-> cheap implementation context.
+If you are reading this in the main session because a human invoked `/tdd`, you are
+in **main-agent mode** — run the loop here. The sub-agent path is `/next`'s to
+drive, and the `tdd-implementer` holds itself to the same discipline below.
 
 ## Philosophy
 
@@ -65,9 +62,9 @@ RIGHT (vertical):
   ...
 ```
 
-## Workflow
+## Workflow (main-agent mode)
 
-### 1. Plan the slice (orchestrator)
+### 1. Plan the slice
 
 When exploring the codebase, use the vocabulary from `CONTEXT.md` (the project's domain glossary) so test names and interface vocabulary match the project's language, and respect any ADRs in `docs/adr/`.
 
@@ -77,7 +74,7 @@ you start — that is the journal's `started` signal. Read the task's acceptance
 criteria and "what to build" from its source plan (`plan:`), or — in Jira mode —
 from the issue body.
 
-Produce the plan you will hand to the implementer:
+Design the slice:
 
 - [ ] Identify opportunities for [deep modules](deep-modules.md) (small interface, deep implementation)
 - [ ] Design interfaces for [testability](interface-design.md)
@@ -86,55 +83,51 @@ Produce the plan you will hand to the implementer:
 **You can't test everything.** Focus the behavior list on critical paths and
 complex logic, not every edge case.
 
-**Planning gate — by task type:**
+A human is present in this mode, so **confirm the plan before writing tests** —
+ask *"What should the public interface look like? Which behaviors are most
+important to test?"* and get agreement on the interface and the prioritized
+behavior list.
 
-- **HITL task** (`type: HITL`, or the `hitl` label in Jira mode): confirm the plan
-  with the user before delegating. Ask: *"What should the public interface look
-  like? Which behaviors are most important to test?"* Get approval on the
-  interface and the prioritized behavior list.
-- **AFK task** (`type: AFK` / `afk`): derive the interface and behavior list from
-  the acceptance criteria and proceed without a confirmation gate — these are
-  meant to run without human gating. State the plan you derived as you dispatch.
+### 2. Tracer bullet
 
-### 2. Delegate the loop to the implementer (orchestrator)
+Write ONE test that confirms ONE thing about the system:
 
-Spawn the `tdd-implementer` agent (Agent tool, `subagent_type: tdd-implementer`)
-with a fresh context. Give it:
+```
+RED:   Write test for first behavior → test fails
+GREEN: Write minimal code to pass → test passes
+```
 
-- **The plan** — the public interface to build and the prioritized behavior list.
-- **The task context** — the acceptance criteria and "what to build" description,
-  the `CONTEXT.md` vocabulary, and any relevant ADRs.
-- **The working directory** — the worktree the slice is being built in (see
-  *Stacked work* in `/next`; create it with `scripts/repo.sh worktree` when the
-  task touches a code repo).
-- **The test command** — how to run this project's tests, if you know it.
+This is your tracer bullet — it proves the path works end-to-end.
 
-The implementer runs RED→GREEN→refactor one behavior at a time and returns a
-summary with `STATUS: COMPLETE | PARTIAL | BLOCKED`, the final test output,
-behaviors implemented (`path:line`), files changed, refactors, assumptions, and
-anything left undone or blocked.
+### 3. Incremental loop
 
-### 3. Review what it returned (orchestrator)
+For each remaining behavior:
 
-Do not rubber-stamp the summary — verify it:
+```
+RED:   Write next test → fails
+GREEN: Minimal code to pass → passes
+```
 
-- **Re-run the tests yourself** to confirm the reported GREEN state is real.
-- **Spot-check the tests against the discipline above** — are they behavioral
-  (public interface, would survive a refactor), or did the implementer drift into
-  shape-testing or horizontal slicing? If the tests are coupled to implementation,
-  send it back with specific guidance.
-- **Handle the status:**
-  - `COMPLETE` → proceed to refactor judgment and close-out.
-  - `PARTIAL` → decide whether to re-spawn the implementer to finish the remaining
-    behaviors (pass it the summary + what's left), or close a narrower slice.
-  - `BLOCKED` → resolve the fork it surfaced (a design decision, an undone
-    dependency). If it needs the user, raise it; then re-spawn with the resolution.
-- **Refactor judgment.** The implementer does in-loop refactoring, but you own the
-  cross-cutting call: look for [refactor candidates](refactoring.md) the slice
-  reveals about existing code (extract duplication, deepen modules, SOLID where
-  natural). Apply or re-delegate as appropriate. **Never leave the tree RED.**
+Rules:
 
-### 4. Close out (orchestrator)
+- One test at a time
+- Only enough code to pass the current test
+- Don't anticipate future tests
+- Keep tests focused on observable behavior
+
+### 4. Refactor
+
+After all tests pass, look for [refactor candidates](refactoring.md):
+
+- [ ] Extract duplication
+- [ ] Deepen modules (move complexity behind simple interfaces)
+- [ ] Apply SOLID principles where natural
+- [ ] Consider what the new code reveals about existing code
+- [ ] Run tests after each refactor step
+
+**Never refactor while RED.** Get to GREEN first.
+
+### 5. Close out
 
 When the task's behaviors are all GREEN and refactored:
 
@@ -147,7 +140,7 @@ own confidence that the slice is done, not the final word.
 
 ## Checklist Per Cycle
 
-The implementer holds itself to this each RED→GREEN; you verify it on review:
+The same discipline binds the `tdd-implementer` sub-agent in orchestrated mode:
 
 ```
 [ ] Test describes behavior, not implementation
