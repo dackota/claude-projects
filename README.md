@@ -25,7 +25,7 @@ Everything is **project-local**: skills, hooks, and agents are copied into the w
 Scaffold one in seconds, then just start working:
 
 ```bash
-proj my-feature --skills
+proj my-feature
 cd my-feature
 claude
 ```
@@ -58,13 +58,13 @@ cd ~/Documents/repos/claude-projects
 ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj
 ```
 
-Skills are **project-local by default** — `proj --skills` copies them into each workspace's `.claude/skills/` and wires the hooks automatically. Nothing else needed.
+Skills are **bundled by default** — every `proj <name>` copies them into the workspace's `.claude/skills/` and wires the hooks automatically. Pass `--no-skills` to opt out, or `--skills LIST` to bundle only a subset.
 
 ## Quick start
 
 ```bash
-# Scaffold a new workspace with all skills and auto-wired hooks
-proj my-project --skills
+# Scaffold a new workspace — all skills + auto-wired hooks are bundled by default
+proj my-project
 
 cd my-project
 
@@ -100,7 +100,8 @@ proj <project-name> [options]
 |------|-------------|
 | `--dir <path>` | Base directory (default: current directory) |
 | `--jira <KEY>` | Jira project key, e.g. `AIDP` |
-| `--skills [LIST]` | Copy skills into `.claude/skills/` in the new project. `LIST` is an optional comma-separated subset. Omit to copy all bundled skills. |
+| `--skills [LIST]` | Skills are bundled by default; pass `LIST` (comma-separated) to bundle only a subset. Bare `--skills` equals the default (all skills). |
+| `--no-skills` | Opt out of bundling skills into the new project. |
 | `--dry-run` | Print what would be created without writing anything |
 | `--force` | Overwrite if target directory already exists |
 | `--show-claude-md` | Print the embedded CLAUDE.md template to stdout |
@@ -109,10 +110,10 @@ proj <project-name> [options]
 **Examples**
 
 ```bash
-proj my-feature-work
+proj my-feature-work                                    # all skills bundled by default
 proj aidp-migration --dir ~/Documents/repos --jira AIDP
-proj big-refactor --skills --dry-run
-proj spike --skills tdd,grill-with-docs
+proj minimal --no-skills                                # scaffold without skills
+proj spike --skills tdd,grill-with-docs                 # bundle only a subset
 ```
 
 ## Scaffolded structure
@@ -127,7 +128,7 @@ proj spike --skills tdd,grill-with-docs
 ├── project.yaml               # source of truth: repos, tasks, Jira key
 ├── .gitignore                 # excludes repos/ and worktrees/
 ├── .claude/
-│   ├── skills/                # bundled skills (when --skills is passed)
+│   ├── skills/                # bundled skills (default; --no-skills to opt out)
 │   ├── agents/                # bundled agents (security-reviewer, implementation-validator)
 │   └── settings.json          # auto-wired hooks (journal, sync-status, repo, pr-security-review)
 ├── docs/
@@ -135,7 +136,7 @@ proj spike --skills tdd,grill-with-docs
 │   ├── adr/                   # architectural decision records
 │   ├── research/              # in-depth research docs
 │   └── validations/           # proof of completion
-├── scripts/                   # one-off and repeatable scripts (repo.sh when --skills repo)
+├── scripts/                   # one-off and repeatable scripts (repo.sh present when the repo skill is bundled — i.e. by default)
 ├── repos/                     # cloned repos (gitignored; managed via scripts/repo.sh)
 └── worktrees/                 # git worktrees, worktrees/<task>/<repo> (gitignored)
 ```
@@ -234,7 +235,7 @@ Status changes drive the journal (`todo → active` → `started`, `active → d
 
 ## Skills
 
-Skills live in `skills/` and are versioned alongside the scaffolder. Pass `--skills` to `proj` to copy them into a new project's `.claude/skills/`, or symlink them globally (see Install) for use across all projects.
+Skills live in `skills/` and are versioned alongside the scaffolder. `proj` copies them into a new project's `.claude/skills/` **by default** (`--no-skills` to opt out, `--skills LIST` for a subset), or you can symlink them globally (see Install) for use across all projects.
 
 Skills are copied per-project by default. Hook-bearing skills (`journal`, `sync-status`, `repo`, `pr-security-review`) also get their hooks **idempotently merged** into `.claude/settings.json` — so they compose cleanly and re-running `proj update-skills` on an existing workspace adds any missing wiring without duplicating it. `journal`/`sync-status` add `asyncRewake` hooks that prompt Claude to log events and keep `STATUS.md` current; `repo` adds a PreToolUse guard plus staleness hooks and drops `scripts/repo.sh` into the workspace; `pr-security-review` adds the PR gate. A skill can also pull in an agent via an `agents:` list in its frontmatter — `proj` copies the named definitions from the repo's `agents/` into `.claude/agents/`.
 

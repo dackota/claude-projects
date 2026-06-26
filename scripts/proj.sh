@@ -15,9 +15,10 @@
 # Options:
 #   --dir <path>       Base directory for the project (default: current directory)
 #   --jira <KEY>       Jira project key (e.g. AIDP)  [scaffold only]
-#   --skills [LIST]    Copy skills into .claude/skills/ in the new project.
-#                      LIST is an optional comma-separated subset (e.g. tdd,grill-with-docs).
-#                      Omit LIST to copy all skills found in the skills/ directory.
+#   --skills [LIST]    Skills are bundled by default. Pass LIST (comma-separated,
+#                      e.g. tdd,grill-with-docs) to restrict to a subset; bare
+#                      --skills is the same as the default (all skills).
+#   --no-skills        Opt out of bundling skills into the new project.
 #   --dry-run          Print what would be created/updated; write nothing
 #   --force            Overwrite if target directory already exists  [scaffold only]
 #   --show-claude-md   Print the embedded CLAUDE.md to stdout and exit
@@ -35,7 +36,7 @@ JIRA_KEY=""
 DRY_RUN=false
 FORCE=false
 PROJECT_NAME=""
-COPY_SKILLS=false
+COPY_SKILLS=true   # skills are bundled by default; opt out with --no-skills
 SKILLS_LIST=""  # empty = all bundled skills
 SUBCOMMAND=""
 
@@ -176,7 +177,8 @@ post_install_skill() {
 # Companion skills a skill orchestrates and cannot function without.
 # skill_deps <skill> -> echoes space-separated dependency skill names
 # Note: `codebase-researcher` is intentionally NOT a dep of `next` — it's an
-# optional detour, never force-installed (install it explicitly or via `--skills`).
+# optional detour, never pulled in as a dep of next (it's bundled by default with
+# all skills, but an explicit `--skills` subset must name it).
 skill_deps() {
   case "$1" in
     next) echo "grill-with-docs to-prd to-issues tdd" ;;
@@ -211,7 +213,7 @@ Read `STATUS.md` first every session before opening any other file. It is a
 ~500-token synthesis of current project state. If it is absent, run
 `/sync-status` to generate it.
 
-When the `next` skill is installed (`proj --skills`), then run `/next` after
+When the `next` skill is installed (bundled by default), then run `/next` after
 reading `STATUS.md`: it determines the current lifecycle phase from workspace
 state and recommends (and routes to) the next action, so you never have to recall
 the `grill-with-docs → to-prd → to-issues → tdd` sequence yourself. You can also
@@ -242,7 +244,7 @@ derived live. Read `project.yaml` to see what repos and tasks exist.
 
 ## repos/ and worktrees/ — always via `scripts/repo.sh`
 
-When the `repo` skill is installed (`proj --skills`), all repo and worktree
+When the `repo` skill is installed (bundled by default), all repo and worktree
 operations MUST go through `scripts/repo.sh`. A PreToolUse guard hook blocks raw
 `git clone`, `git worktree add`, and branch create/switch inside `repos/` and
 `worktrees/`; read-only git and `git checkout -- <file>` stay allowed.
@@ -274,7 +276,7 @@ it deliberately.
 
 ## Pull requests — independent review first (acceptance + security)
 
-When the `pr-security-review` skill is installed (`proj --skills`), `gh pr create`
+When the `pr-security-review` skill is installed (bundled by default), `gh pr create`
 is gated by a **unified PR-review gate**. The skill runs two independent agents
 (neither of which saw the implementation) on the diff, in order:
 
@@ -502,6 +504,7 @@ while [[ $# -gt 0 ]]; do
     --force)           FORCE=true; shift ;;
     --dir)             [[ $# -lt 2 ]] && die "--dir requires an argument"; BASE_DIR="$2"; shift 2 ;;
     --jira)            [[ $# -lt 2 ]] && die "--jira requires an argument"; JIRA_KEY="$2"; shift 2 ;;
+    --no-skills)       COPY_SKILLS=false; shift ;;
     --skills)
       COPY_SKILLS=true
       # optional next arg: comma-separated skill names (not starting with -)
@@ -732,7 +735,7 @@ if $COPY_SKILLS; then
   SKILLS_TO_COPY="$(expand_skill_deps $SKILLS_TO_COPY)"
 
   if [[ ! -d "$SKILLS_SRC" ]]; then
-    warn "--skills requested but skills directory not found: $SKILLS_SRC"
+    warn "skills bundling is on but skills directory not found: $SKILLS_SRC"
     warn "Skills will not be copied. Check your installation."
   else
     for skill in $SKILLS_TO_COPY; do

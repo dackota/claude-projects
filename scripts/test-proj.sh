@@ -66,6 +66,8 @@ assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && e
 assert "STATUS.md has last_synced: null"      "$(grep -q 'last_synced: null' "$TARGET/STATUS.md" && echo true || echo false)"
 assert "journal.yaml exists"                  "$([[ -f $TARGET/journal.yaml ]] && echo true || echo false)"
 assert "journal.yaml is an empty YAML list"   "$(grep -qx '\[\]' "$TARGET/journal.yaml" && echo true || echo false)"
+assert "default: skills bundled (repo)"       "$([[ -d $TARGET/.claude/skills/repo ]] && echo true || echo false)"
+assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.json ]] && echo true || echo false)"
 
 # ── dry-run creates nothing ───────────────────────────────────────────────────
 DRY_TARGET="${TMPDIR_BASE}/dry-run-test"
@@ -80,6 +82,12 @@ assert "exits non-zero when target exists"    "$([[ $exit_code -ne 0 ]] && echo 
 # ── --force overwrites ────────────────────────────────────────────────────────
 bash "$PROJ" "$PROJECT_NAME" --dir "$TMPDIR_BASE" --force
 assert "--force succeeds on existing target"  "$([[ -f $TARGET/CLAUDE.md ]] && echo true || echo false)"
+
+# ── --no-skills opts out of the default skill bundling ────────────────────────
+NS="${TMPDIR_BASE}/no-skills-test"
+bash "$PROJ" "no-skills-test" --dir "$TMPDIR_BASE" --no-skills >/dev/null 2>&1
+assert "--no-skills: workspace still created"  "$([[ -f $NS/CLAUDE.md ]] && echo true || echo false)"
+assert "--no-skills: skills not installed"     "$([[ ! -d $NS/.claude/skills/repo ]] && echo true || echo false)"
 
 # ── repo skill: install + hook wiring ─────────────────────────────────────────
 RT="${TMPDIR_BASE}/repo-test"
