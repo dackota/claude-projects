@@ -1,3 +1,8 @@
 repos/
 worktrees/
 .claude/
+
+# Dogfooding artifacts from developing this tool — kept local, not tracked in
+# the user-facing repo. (In scaffolded workspaces these ARE tracked.)
+docs/adr/
+docs/plans/
