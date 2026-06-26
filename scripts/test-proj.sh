@@ -350,6 +350,7 @@ assert "next: companion grill-with-docs pulled"     "$([[ -d $NT/.claude/skills/
 assert "next: companion to-prd pulled"              "$([[ -d $NT/.claude/skills/to-prd ]] && echo true || echo false)"
 assert "next: companion to-issues pulled"           "$([[ -d $NT/.claude/skills/to-issues ]] && echo true || echo false)"
 assert "next: companion tdd pulled"                 "$([[ -d $NT/.claude/skills/tdd ]] && echo true || echo false)"
+assert "next: tdd-implementer agent wired"          "$([[ -f $NT/.claude/agents/tdd-implementer.md ]] && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"

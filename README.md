@@ -96,7 +96,7 @@ proj spike --skills tdd,grill-with-docs                 # bundle a subset
 ├── project.yaml       # source of truth: repos, tasks, Jira key
 ├── .claude/
 │   ├── skills/        # bundled skills (default; --no-skills to opt out)
-│   ├── agents/        # bundled agents (security-reviewer, implementation-validator)
+│   ├── agents/        # bundled agents (security-reviewer, implementation-validator, tdd-implementer)
 │   └── settings.json  # auto-wired hooks (journal, sync-status, repo, pr-security-review)
 ├── docs/              # plans/, adr/, research/, validations/
 ├── scripts/           # repo.sh (when the repo skill is bundled) + one-off scripts
@@ -114,7 +114,7 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/grill-with-docs` | Interviews you relentlessly to find holes in a rough idea; sharpens `CONTEXT.md`, offers ADRs |
 | `/to-prd` | Synthesizes the conversation into a structured PRD (Jira issue or `docs/plans/`) |
 | `/to-issues` | Breaks the PRD into vertical-slice issues marked AFK (autonomous) or HITL (needs a human) |
-| `/tdd` | Strict red-green-refactor implementation, one test at a time |
+| `/tdd` | Plans a slice, then delegates the red-green-refactor loop to a Sonnet `tdd-implementer` sub-agent and reviews the result |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent acceptance + security review before `gh pr create` |
 | `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks) |

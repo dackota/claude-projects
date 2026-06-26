@@ -220,7 +220,7 @@ Use it after `/to-prd` to turn the spec into a concrete backlog.
 
 ### /tdd
 
-Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. Before writing any code, confirms the interface design and which behaviors matter most. Enforces testing through public interfaces only, not implementation details.
+Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. The main session **orchestrates**: it plans the slice (interface + prioritized behaviors), holds the planning gate with you for HITL tasks (deriving it from acceptance criteria for AFK tasks), then spawns a Sonnet **`tdd-implementer`** sub-agent to run the loop on a fresh context. It reviews what the implementer returns — re-running the tests and checking the tests are behavioral, not implementation-coupled — and owns close-out (status flips, validation doc). Keeps planning and orchestration on the main model while the implementation tokens go to Sonnet.
 
 Use it when starting implementation of any issue produced by `/to-issues`.
 
@@ -235,7 +235,7 @@ These skills compose into a repeatable process from idea to shipped code — and
 1. **Explore the idea — `/grill-with-docs`** — Claude interviews you until every major design branch is resolved, sharpening `CONTEXT.md` and recording hard-to-reverse decisions as ADRs.
 2. **Write the spec — `/to-prd`** — Claude synthesizes the conversation into a full PRD and publishes it to Jira (or `docs/plans/`). No additional input needed.
 3. **Break it into issues — `/to-issues`** — decompose the PRD into vertical slices. Review granularity, HITL/AFK calls, and dependency order, then approve.
-4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). Claude confirms the interface, then writes one failing test → minimal code → refactor. `gh pr create` triggers the PR-review gate; a critical acceptance gap loops the task back into `tdd`.
+4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). The main session plans the slice (confirming the interface with you for HITL tasks), then spawns a Sonnet `tdd-implementer` sub-agent that writes one failing test → minimal code → refactor, and reviews what it returns. `gh pr create` triggers the PR-review gate; a critical acceptance gap loops the task back into `tdd`.
 5. **Log events as they happen — `/journal`** — significant events get logged immediately. The `PostToolUse` hook catches most file-write events automatically.
 6. **Sync the status view — `/sync-status`** — at session end, `STATUS.md` regenerates from current state. The `Stop` hook fires automatically when `journal.yaml` is newer than `STATUS.md`.
 7. **Resume the next session** — Claude reads `STATUS.md` first — a ~500-token synthesis of where the project is, what's active, blocked, and next. No re-orientation cost.

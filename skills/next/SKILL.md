@@ -119,7 +119,11 @@ Tell the user to start a fresh session; the next `/next` there picks up the firs
 task. A task needs only its own acceptance criteria as context, not the whole
 planning history — a fresh session resists the drift that sinks long sessions.
 
-**Build arc — one task per fresh session.**
+**Build arc — one task per fresh session.** `/next` routes to `tdd`; it does not
+itself implement. `tdd` is the orchestrator that plans the slice and then spawns a
+Sonnet `tdd-implementer` sub-agent to run the red-green-refactor loop — so the
+sub-agent fires *inside* the `tdd` skill once dispatched, not from `/next`
+directly. Dispatch by invoking the `tdd` skill so its workflow runs in full.
 
 - **Pick**: propose the next unblocked task per the selection rules (id + title,
   type, and that other unblocked tasks exist if they do). On accept, dispatch into
