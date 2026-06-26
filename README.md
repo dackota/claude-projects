@@ -1,6 +1,6 @@
 # claude-projects
 
-**Scaffold self-contained Claude Code workspaces that remember, follow a workflow, and enforce their own guardrails.** `proj` creates a project directory where Claude picks up exactly where it left off, carries a rough idea through to shipped code, and can't quietly skip the disciplines you care about — repo hygiene, worktree isolation, an independent review before every PR. Skills, hooks, and agents ship *inside the workspace*, like a virtualenv for one body of work.
+**Scaffold self-contained Claude Code workspaces that remember, orchestrate specialized agents through a workflow, and enforce their own guardrails.** `proj` creates a project directory where Claude picks up exactly where it left off, *orchestrates a pipeline of focused sub-agents* to carry a rough idea through to shipped code, and can't quietly skip the disciplines you care about — repo hygiene, worktree isolation, an independent review before every PR. Skills, hooks, and agents ship *inside the workspace*, like a virtualenv for one body of work.
 
 ## The problem
 
@@ -14,11 +14,25 @@ Claude Code starts every session with a blank slate, and nothing holds it to you
 It creates a workspace with control files that hold project state *outside* the conversation, plus bundled skills, hooks, and agents that keep those files current and enforce discipline automatically. Four pillars:
 
 - **Durable memory** — `STATUS.md` (a ~500-token current-state synthesis Claude reads *first* every session), an append-only `journal.yaml`, a `CONTEXT.md` glossary, and ADRs for hard-to-reverse decisions. Re-orientation cost drops to near zero.
-- **An idea-to-ship pipeline, routed for you** — `/next` reads the workspace state and dispatches the right phase (`grill-with-docs → to-prd → to-issues → tdd`), so you never have to remember which skill comes next.
+- **An orchestrated, idea-to-ship pipeline** — the main session is an *orchestrator*, not the thing that types every line. `/next` reads the workspace state and dispatches the right phase (`grill-with-docs → to-prd → to-issues → tdd`), and the focused work is handed to short-lived sub-agents on fresh contexts and the right model tier: a Sonnet `tdd-implementer` runs the red-green-refactor loop while the orchestrator plans and reviews. You never have to remember which skill comes next.
 - **Repo & worktree discipline** — the `repo` skill routes every repo/worktree operation through a generated `scripts/repo.sh`, blocks raw `git clone` / `worktree add`, and warns before you build on a stale worktree. Dependent slices can **stack** on an in-review branch so work never stalls.
-- **Independent PR review** — the `pr-security-review` gate holds `gh pr create` until two fresh agents (neither saw the implementation) sign off: an `implementation-validator` checks the diff against the slice's acceptance criteria, then a `security-reviewer` checks it against bundled checklists.
+- **Independent PR review** — the orchestrator spawns two fresh review agents (neither saw the implementation) at the `pr-security-review` gate, which holds `gh pr create` until they sign off: an `implementation-validator` checks the diff against the slice's acceptance criteria, then a `security-reviewer` checks it against bundled checklists.
 
 Everything is **project-local**: skills, hooks, and agents are copied into the workspace and wired automatically, so it stays self-contained and portable.
+
+The shape of it — one orchestrator, many short-lived specialists:
+
+```
+main session · orchestrator (Opus)
+  holds project state · plans · routes · reviews
+      │
+      ├─ /next .......... reads workspace state, picks the phase
+      ├─ /tdd ........... spawns  tdd-implementer (Sonnet)  → writes tests + code  ┐
+      └─ gh pr create ... spawns  implementation-validator  → acceptance review    │ fresh
+                                  security-reviewer          → security review     ┘ context
+```
+
+Opus plans, routes, and reviews; Sonnet workers do the focused implementation and review. Each sub-agent starts clean, so none inherits the drift of a long session — and the heavy implementation tokens land on the cheaper model.
 
 ## Quick start
 
