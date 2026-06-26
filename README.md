@@ -47,6 +47,7 @@ From there you rarely pick a skill by hand — **`/next` routes you.** It reads 
 
 | Phase | When | Runs |
 |-------|------|------|
+| Bootstrap | `PROJECT.md` goal still blank | Claude helps you fill in `PROJECT.md` |
 | Grill | no PRD yet | `/grill-with-docs` → `/to-prd` |
 | Slice | PRD exists, no tasks | `/to-issues` |
 | Pick | tasks exist, none active | next unblocked task → `/tdd` |
