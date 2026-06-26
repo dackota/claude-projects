@@ -106,6 +106,7 @@ Hook-bearing skills (`journal`, `sync-status`, `repo`, `pr-security-review`) als
 
 | Phase | Detected by | Routes to |
 |-------|-------------|-----------|
+| Bootstrap | `PROJECT.md` Goals still empty/placeholder | help the user fill in `PROJECT.md`, then re-derive |
 | Grill | no PRD yet | `grill-with-docs` (then `to-prd` on shared understanding) |
 | Slice | PRD exists, no tasks | `to-issues` |
 | Pick | tasks exist, none active | next unblocked task (AFK-preferred; HITL surfaced) → `tdd` |

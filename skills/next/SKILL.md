@@ -30,6 +30,11 @@ Always read `project.yaml` first — its `jira_key` selects the routing mode:
 **empty → local mode**, **set → Jira mode**. Then read only what you need to
 determine the phase.
 
+Also glance at `PROJECT.md`: if its **Goals** section is still the scaffold
+placeholder (empty, or just the `<!-- … -->` comment), the project has no stated
+goal yet — that is the **Bootstrap** phase below, and it takes priority over every
+other signal.
+
 **Local mode** (`jira_key` empty):
 
 1. `project.yaml` — `tasks[]` (each task's `status`: `todo` / `active` / `done` /
@@ -65,6 +70,7 @@ Apply the state machine. The first row whose detection holds is the phase:
 
 | Phase | Detected by | Recommended next action |
 |-------|-------------|--------------------------|
+| **Bootstrap** | `PROJECT.md` Goals still empty / placeholder | Help the user fill in `PROJECT.md` — interview them for the goal and context, write it, then re-derive the phase |
 | **Grill** | no active PRD in `docs/plans/` | Run `grill-with-docs`; on shared understanding, `to-prd` (the Grill→Slice transition) |
 | **Slice** | a PRD exists, but `tasks[]` is empty | Run `to-issues` to break the PRD into vertical slices |
 | **Pick** | tasks exist, none `active` | Pick the next unblocked task, then run `tdd` (see selection rules) |
@@ -74,6 +80,13 @@ Apply the state machine. The first row whose detection holds is the phase:
 
 Notes:
 
+- **Bootstrap comes first.** Without a stated goal in `PROJECT.md`, grilling has
+  nothing to sharpen. Don't proceed silently or invent a goal — ask the user what
+  the project should accomplish and the context behind it, write `PROJECT.md` with
+  their answers (preserve the frontmatter), then re-derive the phase. This is the
+  one phase whose action edits an artifact, because that artifact is the
+  prerequisite for every phase after it. (A `PROJECT.md` with real Goals → fall
+  through to Grill.)
 - **Grill and "shared understanding" collapse.** There is no clean "grilling is
   done" artifact, so *"an active PRD exists"* is the only signal that grilling
   finished. No active PRD → (continue) grilling.
@@ -152,8 +165,10 @@ first.
 - Do **not** auto-continue across the planning → build seam — hand off to a fresh
   session there.
 - Phase *detection* is read-only — never modify an artifact just to "advance" a
-  phase. Status flips happen inside the phase skills (e.g. `tdd` flips a task to
-  `active` when it starts and `done` when it finishes).
+  phase. The one exception is **Bootstrap**, which writes `PROJECT.md` from the
+  user's answers — that captures the goal, it does not fake advancement. Task
+  status flips happen inside the phase skills (e.g. `tdd` flips a task to `active`
+  when it starts and `done` when it finishes).
 
 ## Install (one-time per machine)
 

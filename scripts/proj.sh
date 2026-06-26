@@ -219,6 +219,13 @@ state and recommends (and routes to) the next action, so you never have to recal
 the `grill-with-docs → to-prd → to-issues → tdd` sequence yourself. You can also
 run `/next` any time mid-session to ask "where am I / what's next?".
 
+**Before anything else, check `PROJECT.md`.** If its Goals section is still the
+scaffold placeholder (empty, or just the `<!-- … -->` comment), the project has no
+stated goal yet — do **not** proceed or invent one. Ask the user what the project
+is trying to accomplish and the context behind it, fill `PROJECT.md` in with their
+answers (keep the frontmatter), then continue. `/next` treats this as the
+**Bootstrap** phase.
+
 ## Project Structure
 
 - `project.yaml` - source of truth: repos, tasks, Jira key, and config
