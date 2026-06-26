@@ -73,8 +73,8 @@ Apply the state machine. The first row whose detection holds is the phase:
 | **Bootstrap** | `PROJECT.md` Goals still empty / placeholder | Help the user fill in `PROJECT.md` — interview them for the goal and context, write it, then re-derive the phase |
 | **Grill** | no active PRD in `docs/plans/` | Run `grill-with-docs`; on shared understanding, `to-prd` (the Grill→Slice transition) |
 | **Slice** | a PRD exists, but `tasks[]` is empty | Run `to-issues` to break the PRD into vertical slices |
-| **Pick** | tasks exist, none `active` | Pick the next unblocked task, then run `tdd` (see selection rules) |
-| **Build** | a task is `active` | Continue `tdd` on that task |
+| **Pick** | tasks exist, none `active` | Pick the next unblocked task, then build it via the `tdd-implementer` sub-agent (HITL gets a planning gate first) — see selection + dispatch rules |
+| **Build** | a task is `active` | Continue building it via the sub-agent |
 | **Land** | a task is `done` but not yet PR'd | Open the PR (the PR-review gate runs at `gh pr create`) |
 | **Done** | all tasks `done` and landed | Project complete — nothing to route |
 
@@ -132,19 +132,34 @@ Tell the user to start a fresh session; the next `/next` there picks up the firs
 task. A task needs only its own acceptance criteria as context, not the whole
 planning history — a fresh session resists the drift that sinks long sessions.
 
-**Build arc — one task per fresh session.** `/next` routes to `tdd`; it does not
-itself implement. `tdd` is the orchestrator that plans the slice and then spawns a
-Sonnet `tdd-implementer` sub-agent to run the red-green-refactor loop — so the
-sub-agent fires *inside* the `tdd` skill once dispatched, not from `/next`
-directly. Dispatch by invoking the `tdd` skill so its workflow runs in full.
+**Build arc — one task per fresh session.** When `/next` builds a task it runs the
+work **as a sub-agent**, whatever the type — the orchestrator (you) stays lean and
+the implementation context is disposable. For each build:
+
+1. Flip the task `todo → active` and set up the worktree.
+2. **HITL task** → do the human-facing planning gate yourself first (you're the
+   orchestrator and *can* talk to the user): confirm the public interface and the
+   prioritized behaviors. Then spawn the `tdd-implementer` (Agent tool,
+   `subagent_type: tdd-implementer`) with that **cleared plan**.
+   **AFK task** → derive the plan from the acceptance criteria (or leave it to the
+   sub-agent) and spawn `tdd-implementer` directly — no human gate.
+3. The sub-agent runs the red-green-refactor loop on a fresh context and returns a
+   `COMPLETE | PARTIAL | BLOCKED` summary. Review it (re-run the tests; check the
+   tests are behavioral, not implementation-coupled), flip `active → done` on a
+   clean pass, and proceed to the PR gate.
+
+A human who invokes `/tdd` by hand runs it **inline in the main agent** instead
+(the skill's interactive main-agent mode) — that path does not spawn the sub-agent.
 
 - **Pick**: propose the next unblocked task per the selection rules (id + title,
-  type, and that other unblocked tasks exist if they do). On accept, dispatch into
-  `tdd` for that task; the user may name a different unblocked task instead.
-- **Build**: a task is already `active` → continue `tdd` on it. If the task was
-  reopened by a validator loop-back (it went `done → active` with a recent
-  `blocker` journal entry), frame the session as *closing the flagged acceptance
-  gaps* — read the gate's CRITICAL findings first — not as starting fresh.
+  type, and that other unblocked tasks exist if they do). On accept, build it as
+  above (sub-agent either way; a HITL task gets the planning gate first); the user
+  may name a different unblocked task instead.
+- **Build**: a task is already `active` → continue building it — re-dispatch to the
+  sub-agent with the prior summary and what's left. If it was reopened by a
+  validator loop-back (it went `done → active` with a recent `blocker` journal
+  entry), frame the work as *closing the flagged acceptance gaps* — read the gate's
+  CRITICAL findings first and pass them to the sub-agent — not as starting fresh.
 
 **Stacked work (when the task touches a code repo).** Create the worktree through
 `scripts/repo.sh worktree <task> <repo>` — if the task's blocker is still in
@@ -154,9 +169,10 @@ review. Before continuing on a stacked task, check `scripts/repo.sh status`: a
 **BASE REOPENED** flag means the parent looped back to `active` (an acceptance
 loop-back) — warn the user and reconcile deliberately; never auto-rebase.
 
-For interactive phase *entry* (grill, tdd) dispatch immediately once the user is
-clearly ready; for the cross-phase *commitments* above, take the light confirm
-first.
+For interactive phase *entry* (grill, or a hand-invoked `tdd`) dispatch immediately
+once the user is clearly ready; an orchestrated build goes to the sub-agent (a HITL
+task after its planning gate). For the cross-phase *commitments* above, take the
+light confirm first.
 
 ## Boundaries
 
@@ -167,8 +183,9 @@ first.
 - Phase *detection* is read-only — never modify an artifact just to "advance" a
   phase. The one exception is **Bootstrap**, which writes `PROJECT.md` from the
   user's answers — that captures the goal, it does not fake advancement. Task
-  status flips happen inside the phase skills (e.g. `tdd` flips a task to `active`
-  when it starts and `done` when it finishes).
+  status flips are an action, not detection: `/next` flips a task `todo → active`
+  then `active → done` around an orchestrated (sub-agent) build, since the
+  sub-agent can't; a hand-invoked `tdd` flips its own status inside the skill.
 
 ## Install (one-time per machine)
 

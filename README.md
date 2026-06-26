@@ -26,13 +26,14 @@ The shape of it — one orchestrator, many short-lived specialists:
 main session · orchestrator (Opus)
   holds project state · plans · routes · reviews
       │
-      ├─ /next .......... reads workspace state, picks the phase
-      ├─ /tdd ........... spawns  tdd-implementer (Sonnet)  → writes tests + code  ┐
-      └─ gh pr create ... spawns  implementation-validator  → acceptance review    │ fresh
-                                  security-reviewer          → security review     ┘ context
+      ├─ /next ........... picks the phase, then builds each task via…           ┐
+      │     └─ tdd-implementer (Sonnet) → writes tests + code  (HITL: gated first) │
+      ├─ /tdd ........... hand-invoked → runs the loop inline (interactive)        │ fresh
+      └─ gh pr create ... implementation-validator → acceptance review            │ context
+                          security-reviewer        → security review             ┘
 ```
 
-Opus plans, routes, and reviews; Sonnet workers do the focused implementation and review. Each sub-agent starts clean, so none inherits the drift of a long session — and the heavy implementation tokens land on the cheaper model.
+When `/next` builds a task it spawns the Sonnet sub-agent to run the loop (gathering your input first for a HITL task); when you invoke `/tdd` by hand it runs inline in the main agent so you steer each cycle. Either way the orchestrator (Opus) plans/reviews and the PR gate's two review agents start clean — so the heavy, repeatable work lands on the cheaper model and no sub-agent inherits the drift of a long session.
 
 ## Quick start
 
@@ -50,8 +51,8 @@ From there you rarely pick a skill by hand — **`/next` routes you.** It reads 
 | Bootstrap | `PROJECT.md` goal still blank | Claude helps you fill in `PROJECT.md` |
 | Grill | no PRD yet | `/grill-with-docs` → `/to-prd` |
 | Slice | PRD exists, no tasks | `/to-issues` |
-| Pick | tasks exist, none active | next unblocked task → `/tdd` |
-| Build | a task is active | continue `/tdd` |
+| Pick | tasks exist, none active | next unblocked task → `tdd-implementer` sub-agent |
+| Build | a task is active | continue the build via the sub-agent |
 | Land | task done, not PR'd | the PR-review gate |
 
 The planning arc auto-chains in one session; building breaks to a fresh session per task to resist context drift.
@@ -129,7 +130,7 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/grill-with-docs` | Interviews you relentlessly to find holes in a rough idea; sharpens `CONTEXT.md`, offers ADRs |
 | `/to-prd` | Synthesizes the conversation into a structured PRD (Jira issue or `docs/plans/`) |
 | `/to-issues` | Breaks the PRD into vertical-slice issues marked AFK (autonomous) or HITL (needs a human) |
-| `/tdd` | Plans a slice, then delegates the red-green-refactor loop to a Sonnet `tdd-implementer` sub-agent and reviews the result |
+| `/tdd` | Red-green-refactor, one test at a time. Hand-invoke it to run the loop inline (interactive); `/next` builds tasks by spawning the Sonnet `tdd-implementer` sub-agent (HITL tasks get a planning gate first) |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent acceptance + security review before `gh pr create` |
 | `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks) |
