@@ -109,7 +109,7 @@ Hook-bearing skills (`journal`, `sync-status`, `repo`, `pr-security-review`) als
 | Bootstrap | `PROJECT.md` Goals still empty/placeholder | help the user fill in `PROJECT.md`, then re-derive |
 | Grill | no PRD yet | `grill-with-docs` (then `to-prd` on shared understanding) |
 | Slice | PRD exists, no tasks | `to-issues` |
-| Pick | tasks exist, none active | next unblocked task → autonomous build via `tdd-implementer` sub-agent |
+| Pick | tasks exist, none active | next unblocked task → build via `tdd-implementer` sub-agent (HITL: gather human input first) |
 | Build | a task is active | continue the build via the sub-agent |
 | Land | task done, not PR'd | the unified PR-review gate |
 
@@ -221,10 +221,10 @@ Use it after `/to-prd` to turn the spec into a concrete backlog.
 
 ### /tdd
 
-Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. It **never requires interaction**: every human decision was made and confirmed upstream (grilling → `to-prd` → `to-issues`), so by build time the acceptance criteria are the settled contract and there is nothing to gate on. Two ways it runs, by who invoked it:
+Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. The **loop never requires interaction**: an AFK task's design was settled upstream (grilling → `to-prd` → `to-issues`), so its acceptance criteria are a complete contract. A **HITL** task is the exception — it was flagged because it needs human input (a decision the upstream phases couldn't settle); that input is gathered *before* the loop, which then runs non-interactively. Two ways it runs, by who invoked it:
 
-- **Hand-invoked → main-agent mode.** You run `/tdd` directly and the main agent (Opus) runs the loop **inline** — the path for an ad-hoc request where you want the main model doing the implementation itself, with you watching. It derives the plan from the acceptance criteria (or the request) and runs; no planning gate, though you can steer since it's in the session.
-- **`/next` build → subagent mode.** `/next` flips the task `todo → active`, sets up the worktree, and spawns the Sonnet **`tdd-implementer`** sub-agent on a fresh context. The sub-agent derives the plan, runs the loop, and returns a `COMPLETE | PARTIAL | BLOCKED` summary; `/next` reviews it (re-running tests, checking the tests are behavioral), flips `active → done` on a clean pass, and proceeds to the PR gate. AFK and HITL tasks build the same way — the marker no longer gates the build; a genuine fork the criteria didn't settle comes back as `BLOCKED` (reactive, not a routine gate). This path keeps the orchestrator lean and the implementation tokens on Sonnet.
+- **Hand-invoked → main-agent mode.** You run `/tdd` directly and the main agent (Opus) runs the loop **inline** — the path for an ad-hoc request where you want the main model doing the implementation itself, with you watching. It derives the plan from the acceptance criteria (or the request) and runs; no planning gate. The user is in-session, so for a HITL task (or a genuine question) it just asks, then continues.
+- **`/next` build → subagent mode.** For a HITL task, `/next` first gathers the human input the task needs (it can talk to the user; the sub-agent can't). Then it flips the task `todo → active`, sets up the worktree, and spawns the Sonnet **`tdd-implementer`** sub-agent on a fresh context with the criteria (plus any gathered HITL input). The sub-agent derives the plan, runs the loop, and returns a `COMPLETE | PARTIAL | BLOCKED` summary; `/next` reviews it (re-running tests, checking the tests are behavioral), flips `active → done` on a clean pass, and proceeds to the PR gate. A fork that surfaces mid-build comes back as `BLOCKED` (reactive, not a routine gate). This path keeps the orchestrator lean and the implementation tokens on Sonnet.
 
 Use it when starting implementation of any issue produced by `/to-issues`.
 
@@ -239,7 +239,7 @@ These skills compose into a repeatable process from idea to shipped code — and
 1. **Explore the idea — `/grill-with-docs`** — Claude interviews you until every major design branch is resolved, sharpening `CONTEXT.md` and recording hard-to-reverse decisions as ADRs.
 2. **Write the spec — `/to-prd`** — Claude synthesizes the conversation into a full PRD and publishes it to Jira (or `docs/plans/`). No additional input needed.
 3. **Break it into issues — `/to-issues`** — decompose the PRD into vertical slices. Review granularity, HITL/AFK calls, and dependency order, then approve.
-4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). `/next` builds the task by spawning a Sonnet `tdd-implementer` sub-agent that derives the plan from the settled acceptance criteria and writes one failing test → minimal code → refactor, returning a summary the orchestrator reviews. (Hand-invoke `/tdd` instead when you want Opus to build inline for an ad-hoc request — same loop, in the main agent.) Neither is interactive. `gh pr create` triggers the PR-review gate; a critical acceptance gap loops the task back into the build.
+4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). `/next` builds the task by spawning a Sonnet `tdd-implementer` sub-agent that derives the plan from the acceptance criteria and writes one failing test → minimal code → refactor, returning a summary the orchestrator reviews — for a HITL task `/next` gathers the human input it needs first, then the loop runs non-interactively. (Hand-invoke `/tdd` instead when you want Opus to build inline for an ad-hoc request — same loop, in the main agent.) `gh pr create` triggers the PR-review gate; a critical acceptance gap loops the task back into the build.
 5. **Log events as they happen — `/journal`** — significant events get logged immediately. The `PostToolUse` hook catches most file-write events automatically.
 6. **Sync the status view — `/sync-status`** — at session end, `STATUS.md` regenerates from current state. The `Stop` hook fires automatically when `journal.yaml` is newer than `STATUS.md`.
 7. **Resume the next session** — Claude reads `STATUS.md` first — a ~500-token synthesis of where the project is, what's active, blocked, and next. No re-orientation cost.

@@ -10,28 +10,34 @@ agents:
 
 ## How this runs
 
-`/tdd` builds **one slice via the red-green-refactor loop, and never requires
-interaction** — every design decision was settled upstream (grilling, confirmed in
-`to-prd` and `to-issues`), so the acceptance criteria are the contract and there is
-nothing to gate on. There are two ways it runs, decided by **who invoked it**:
+`/tdd` builds **one slice via the red-green-refactor loop, and the loop itself
+never requires interaction** — an AFK task's design was settled upstream (grilling,
+confirmed in `to-prd` and `to-issues`), so its acceptance criteria are a complete
+contract. A **HITL task is the exception**: it was flagged HITL precisely *because
+it needs human input* (a decision or answer that couldn't be settled upstream), so
+that input is gathered **before** the loop runs — then the loop runs
+non-interactively like any other. There are two ways it runs, decided by **who
+invoked it**:
 
 - **Hand-invoked → main-agent mode.** You ran `/tdd` directly. The main agent
   (Opus) runs the loop **inline, in this session** — the path for an ad-hoc request
   where you want the main model doing the implementation itself, with you watching.
   Derive the plan from the task's acceptance criteria (or, for an ad-hoc request
-  with no task, from what you were asked) and run — no planning gate. Because you're
-  in the main session the user *may* steer mid-loop, but the skill never requires
-  it. The rest of this file describes this mode.
+  with no task, from what you were asked) and run — no planning gate. The user is
+  right here, so if the task is HITL or a question genuinely arises, just ask, then
+  continue; the skill never *requires* it. The rest of this file describes this mode.
 - **`/next` build → subagent mode.** `/next` (the orchestrator) builds the task by
   spawning the Sonnet **`tdd-implementer`** sub-agent on a fresh context — the
-  autonomous pipeline path. The orchestrator flips the task `active`, spawns the
-  sub-agent, reviews its `COMPLETE | PARTIAL | BLOCKED` summary, and closes out.
-  This keeps the orchestrator lean and the implementation tokens on the cheaper
-  model. The sub-agent follows the same discipline below.
+  autonomous pipeline path. For a HITL task `/next` gathers the needed human input
+  first (it can talk to the user; the sub-agent can't), then hands it to the
+  sub-agent. The orchestrator flips the task `active`, spawns the sub-agent, reviews
+  its `COMPLETE | PARTIAL | BLOCKED` summary, and closes out — keeping the
+  orchestrator lean and the implementation tokens on the cheaper model. The
+  sub-agent follows the same discipline below.
 
-Neither mode has a confirmation prompt. If a genuine design fork the criteria
-didn't settle comes up, surface it (inline mode) or return `BLOCKED` (subagent
-mode) rather than guessing — that's reactive, not a routine gate.
+No mode gates the *loop* on a confirmation prompt. If a genuine design fork the
+criteria didn't settle comes up mid-build, surface it (inline mode) or return
+`BLOCKED` (subagent mode) rather than guessing — that's reactive, not a routine gate.
 
 ## Philosophy
 
@@ -78,6 +84,9 @@ If you're implementing a `project.yaml` task, pick one whose `blocked_by` are al
 `done`, flip its `status` `todo → active` (the journal's `started` signal), and
 read its acceptance criteria from the source plan (`plan:`) or the Jira issue. For
 an ad-hoc request with no task, the request itself is the spec.
+
+If the task is **HITL**, it needs human input before you build — the user is in the
+session with you, so get the decision or answer it flagged now, then proceed.
 
 Derive the plan — don't confirm it:
 
