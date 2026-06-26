@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development with red-green-refactor loop. When a human invokes /tdd directly it runs inline in the main agent (interactive — plan + drive the loop yourself). When /next builds a task it instead spawns the Sonnet tdd-implementer sub-agent to complete it (both AFK and HITL). Use when user wants to build features or fix bugs using TDD, mentions "red-green-refactor", wants integration tests, or asks for test-first development.
+description: Test-driven development with red-green-refactor loop. Never requires interaction (the design was settled in grilling / to-prd / to-issues). Runs two ways by caller — hand-invoked, the main agent (Opus) runs the loop inline for an ad-hoc request; via /next, the Sonnet tdd-implementer sub-agent builds the slice autonomously. Use when building a slice from its acceptance criteria, or for an ad-hoc test-first request.
 origin: claude-projects
 agents:
   - tdd-implementer
@@ -8,24 +8,30 @@ agents:
 
 # Test-Driven Development
 
-## How this skill runs
+## How this runs
 
-`/tdd` runs in one of two modes, decided by **who invoked it**:
+`/tdd` builds **one slice via the red-green-refactor loop, and never requires
+interaction** — every design decision was settled upstream (grilling, confirmed in
+`to-prd` and `to-issues`), so the acceptance criteria are the contract and there is
+nothing to gate on. There are two ways it runs, decided by **who invoked it**:
 
-- **Main-agent mode (interactive)** — a human invoked `/tdd` directly, ad hoc. You
-  run the whole cycle **in this session**: plan the slice (confirming the interface
-  and behaviors with the user), drive RED→GREEN→refactor yourself so they can watch
-  and steer, and close it out. This is what the workflow below describes.
-- **Subagent mode (orchestrated)** — `/next` is building a task. It does **not**
-  run this skill inline; it spawns the Sonnet **`tdd-implementer`** sub-agent on a
-  fresh context to run the loop, then reviews the structured summary it returns.
-  This applies to **both AFK and HITL** tasks — for a HITL task the orchestrator
-  gathers the user's input at the planning gate first, then hands the cleared plan
-  to the sub-agent. (See `/next`'s Build arc for how it dispatches.)
+- **Hand-invoked → main-agent mode.** You ran `/tdd` directly. The main agent
+  (Opus) runs the loop **inline, in this session** — the path for an ad-hoc request
+  where you want the main model doing the implementation itself, with you watching.
+  Derive the plan from the task's acceptance criteria (or, for an ad-hoc request
+  with no task, from what you were asked) and run — no planning gate. Because you're
+  in the main session the user *may* steer mid-loop, but the skill never requires
+  it. The rest of this file describes this mode.
+- **`/next` build → subagent mode.** `/next` (the orchestrator) builds the task by
+  spawning the Sonnet **`tdd-implementer`** sub-agent on a fresh context — the
+  autonomous pipeline path. The orchestrator flips the task `active`, spawns the
+  sub-agent, reviews its `COMPLETE | PARTIAL | BLOCKED` summary, and closes out.
+  This keeps the orchestrator lean and the implementation tokens on the cheaper
+  model. The sub-agent follows the same discipline below.
 
-If you are reading this in the main session because a human invoked `/tdd`, you are
-in **main-agent mode** — run the loop here. The sub-agent path is `/next`'s to
-drive, and the `tdd-implementer` holds itself to the same discipline below.
+Neither mode has a confirmation prompt. If a genuine design fork the criteria
+didn't settle comes up, surface it (inline mode) or return `BLOCKED` (subagent
+mode) rather than guessing — that's reactive, not a routine gate.
 
 ## Philosophy
 
@@ -62,31 +68,22 @@ RIGHT (vertical):
   ...
 ```
 
-## Workflow (main-agent mode)
+## Workflow (main-agent / inline mode)
 
-### 1. Plan the slice
+### 1. Plan the slice (no gate)
 
-When exploring the codebase, use the vocabulary from `CONTEXT.md` (the project's domain glossary) so test names and interface vocabulary match the project's language, and respect any ADRs in `docs/adr/`.
+Use the vocabulary from `CONTEXT.md` (the project's domain glossary) so test names and interface vocabulary match the project's language, and respect any ADRs in `docs/adr/`.
 
-You are usually implementing one `project.yaml` task. Pick a task whose
-`blocked_by` are all `done`, and flip its `status` from `todo` to `active` when
-you start — that is the journal's `started` signal. Read the task's acceptance
-criteria and "what to build" from its source plan (`plan:`), or — in Jira mode —
-from the issue body.
+If you're implementing a `project.yaml` task, pick one whose `blocked_by` are all
+`done`, flip its `status` `todo → active` (the journal's `started` signal), and
+read its acceptance criteria from the source plan (`plan:`) or the Jira issue. For
+an ad-hoc request with no task, the request itself is the spec.
 
-Design the slice:
+Derive the plan — don't confirm it:
 
 - [ ] Identify opportunities for [deep modules](deep-modules.md) (small interface, deep implementation)
 - [ ] Design interfaces for [testability](interface-design.md)
-- [ ] List the prioritized **behaviors to test** (not implementation steps)
-
-**You can't test everything.** Focus the behavior list on critical paths and
-complex logic, not every edge case.
-
-A human is present in this mode, so **confirm the plan before writing tests** —
-ask *"What should the public interface look like? Which behaviors are most
-important to test?"* and get agreement on the interface and the prioritized
-behavior list.
+- [ ] List the prioritized **behaviors to test** (not implementation steps) — critical paths and complex logic first; you can't test everything
 
 ### 2. Tracer bullet
 
@@ -131,7 +128,7 @@ After all tests pass, look for [refactor candidates](refactoring.md):
 
 When the task's behaviors are all GREEN and refactored:
 
-- Flip the `project.yaml` task `status` to `done` — the journal's `done` signal.
+- Flip the `project.yaml` task `status` to `done` — the journal's `done` signal (skip for an ad-hoc request with no task).
 - For a meaningful plan or milestone (not every task), write a validation doc to `docs/validations/` with the evidence (commands run, `path:line`, test output) and reference it from the `done` journal entry.
 
 The independent acceptance check happens later, at the PR gate
@@ -140,7 +137,7 @@ own confidence that the slice is done, not the final word.
 
 ## Checklist Per Cycle
 
-The same discipline binds the `tdd-implementer` sub-agent in orchestrated mode:
+The same discipline binds the `tdd-implementer` sub-agent in subagent mode:
 
 ```
 [ ] Test describes behavior, not implementation

@@ -25,7 +25,7 @@ Bundled skills:
 | `grill-with-docs` | Relentless design interview that sharpens `CONTEXT.md` and offers ADRs |
 | `to-prd` | Synthesize conversation context into a PRD |
 | `to-issues` | Break a plan into tracer-bullet vertical-slice issues |
-| `tdd` | Test-driven development red-green-refactor loop. Runs inline in the main agent when hand-invoked; `/next` builds tasks (AFK or HITL) by spawning the Sonnet `tdd-implementer` sub-agent (HITL gets a planning gate first) |
+| `tdd` | Test-driven development red-green-refactor loop, non-interactive. Hand-invoked → the main agent (Opus) runs the loop inline (ad-hoc); via `/next` → the Sonnet `tdd-implementer` sub-agent builds the slice |
 | `repo` | Hook-enforced repo & worktree management via `scripts/repo.sh` |
 | `security-review` | App-code security checklist (OWASP, secrets, authn/z, injection) |
 | `cloud-infra-security` | Cloud/IaC security checklist (IAM, network, CI/CD, secrets) |
