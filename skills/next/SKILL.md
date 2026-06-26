@@ -73,7 +73,7 @@ Apply the state machine. The first row whose detection holds is the phase:
 | **Bootstrap** | `PROJECT.md` Goals still empty / placeholder | Help the user fill in `PROJECT.md` — interview them for the goal and context, write it, then re-derive the phase |
 | **Grill** | no active PRD in `docs/plans/` | Run `grill-with-docs`; on shared understanding, `to-prd` (the Grill→Slice transition) |
 | **Slice** | a PRD exists, but `tasks[]` is empty | Run `to-issues` to break the PRD into vertical slices |
-| **Pick** | tasks exist, none `active` | Pick the next unblocked task, then build it via the `tdd-implementer` sub-agent (HITL gets a planning gate first) — see selection + dispatch rules |
+| **Pick** | tasks exist, none `active` | Pick the next unblocked task, then build it via the `tdd-implementer` sub-agent (a HITL task gathers human input first) — see selection + dispatch rules |
 | **Build** | a task is `active` | Continue building it via the sub-agent |
 | **Land** | a task is `done` but not yet PR'd | Open the PR (the PR-review gate runs at `gh pr create`) |
 | **Done** | all tasks `done` and landed | Project complete — nothing to route |
@@ -100,13 +100,14 @@ When the phase is **Pick**, choose what to recommend:
 
 - Consider only tasks whose `blocked_by` are **all `done`** (the unblocked
   frontier).
-- **Prefer an `AFK` task** for the default recommendation; it can proceed without
-  human gating.
-- If the best candidate is `HITL`, **surface that** — say it needs the human's
-  engagement (a design decision or review) before building, rather than silently
-  starting it.
 - Recommend one task in dependency order, but make clear the user can pick a
   different unblocked task — priority among unblocked peers is theirs to decide.
+- **Prefer an `AFK` task** for the default recommendation; it builds with no human
+  input needed.
+- If the best candidate is `HITL`, **surface that** — it needs human input
+  (a design decision or answer the task flagged) *before* the build. You gather
+  that input first; the build loop itself still runs non-interactively once you
+  have it. Don't silently start a HITL task without resolving its input.
 
 ### 4. Report and dispatch
 
@@ -132,29 +133,37 @@ Tell the user to start a fresh session; the next `/next` there picks up the firs
 task. A task needs only its own acceptance criteria as context, not the whole
 planning history — a fresh session resists the drift that sinks long sessions.
 
-**Build arc — one task per fresh session.** When `/next` builds a task it runs the
-work **as a sub-agent**, whatever the type — the orchestrator (you) stays lean and
-the implementation context is disposable. For each build:
+**Build arc — one task per fresh session.** `/next` builds a task by spawning the
+Sonnet `tdd-implementer` sub-agent on a fresh context — the build **loop** is
+non-interactive. The task type decides whether a human-input step comes *first*;
+either way the orchestrator (you) stays lean and the implementation context stays
+disposable. For each build:
 
-1. Flip the task `todo → active` and set up the worktree.
-2. **HITL task** → do the human-facing planning gate yourself first (you're the
-   orchestrator and *can* talk to the user): confirm the public interface and the
-   prioritized behaviors. Then spawn the `tdd-implementer` (Agent tool,
-   `subagent_type: tdd-implementer`) with that **cleared plan**.
-   **AFK task** → derive the plan from the acceptance criteria (or leave it to the
-   sub-agent) and spawn `tdd-implementer` directly — no human gate.
-3. The sub-agent runs the red-green-refactor loop on a fresh context and returns a
+1. Flip the task `todo → active` and set up the worktree (`scripts/repo.sh worktree …`
+   for a code repo).
+2. **AFK task** → its design is fully settled upstream (grilling → `to-prd` →
+   `to-issues`), so spawn the `tdd-implementer` (Agent tool,
+   `subagent_type: tdd-implementer`) directly.
+   **HITL task** → it was flagged HITL *because it needs human input* — a design
+   decision or answer that couldn't be settled upstream. You're the orchestrator
+   and can talk to the user, so **gather that input first**, then spawn the
+   sub-agent with it folded into the criteria you pass. The build loop runs
+   non-interactively once the input is in hand.
+3. Give the sub-agent the task's acceptance criteria (plus any gathered HITL input),
+   `CONTEXT.md` vocabulary, relevant ADRs, the working directory, and the test
+   command. It derives the plan and runs the red-green-refactor loop, returning a
    `COMPLETE | PARTIAL | BLOCKED` summary. Review it (re-run the tests; check the
    tests are behavioral, not implementation-coupled), flip `active → done` on a
-   clean pass, and proceed to the PR gate.
+   clean pass, and proceed to the PR gate. On `BLOCKED` — a fork that surfaced
+   mid-build — gather any further input the user needs to settle it and re-spawn.
 
-A human who invokes `/tdd` by hand runs it **inline in the main agent** instead
-(the skill's interactive main-agent mode) — that path does not spawn the sub-agent.
+Invoking `/tdd` by hand is different: it runs the loop **inline in the main agent**
+(Opus) for an ad-hoc build — see the `tdd` skill's main-agent mode. `/next` always
+takes the sub-agent path.
 
 - **Pick**: propose the next unblocked task per the selection rules (id + title,
-  type, and that other unblocked tasks exist if they do). On accept, build it as
-  above (sub-agent either way; a HITL task gets the planning gate first); the user
-  may name a different unblocked task instead.
+  marker, and that other unblocked tasks exist if they do). On accept, build it as
+  above; the user may name a different unblocked task instead.
 - **Build**: a task is already `active` → continue building it — re-dispatch to the
   sub-agent with the prior summary and what's left. If it was reopened by a
   validator loop-back (it went `done → active` with a recent `blocker` journal
@@ -169,10 +178,11 @@ review. Before continuing on a stacked task, check `scripts/repo.sh status`: a
 **BASE REOPENED** flag means the parent looped back to `active` (an acceptance
 loop-back) — warn the user and reconcile deliberately; never auto-rebase.
 
-For interactive phase *entry* (grill, or a hand-invoked `tdd`) dispatch immediately
-once the user is clearly ready; an orchestrated build goes to the sub-agent (a HITL
-task after its planning gate). For the cross-phase *commitments* above, take the
-light confirm first.
+For interactive phase *entry* (grill, and the human-input step of a HITL build)
+engage once the user is ready; an AFK build runs straight through the sub-agent,
+and a hand-invoked build runs inline in the main agent. For the cross-phase
+*commitments* above, take the light confirm
+first.
 
 ## Boundaries
 
@@ -183,9 +193,9 @@ light confirm first.
 - Phase *detection* is read-only — never modify an artifact just to "advance" a
   phase. The one exception is **Bootstrap**, which writes `PROJECT.md` from the
   user's answers — that captures the goal, it does not fake advancement. Task
-  status flips are an action, not detection: `/next` flips a task `todo → active`
-  then `active → done` around an orchestrated (sub-agent) build, since the
-  sub-agent can't; a hand-invoked `tdd` flips its own status inside the skill.
+  status flips are an action, not detection: the invoking orchestrator (you, or
+  `/next`) flips a task `todo → active` then `active → done` around the sub-agent
+  build, since the sub-agent can't touch status.
 
 ## Install (one-time per machine)
 
