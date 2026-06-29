@@ -16,7 +16,7 @@ It creates a workspace with control files that hold project state *outside* the 
 - **Durable memory** — `STATUS.md` (a ~500-token current-state synthesis Claude reads *first* every session), an append-only `journal.yaml`, a `CONTEXT.md` glossary, and ADRs for hard-to-reverse decisions. Re-orientation cost drops to near zero.
 - **An orchestrated, idea-to-ship pipeline** — the main session is an *orchestrator*, not the thing that types every line. `/next` reads the workspace state and dispatches the right phase (`grill-with-docs → to-prd → to-issues → tdd`), and the focused work is handed to short-lived sub-agents on fresh contexts and the right model tier: a Sonnet `tdd-implementer` runs the red-green-refactor loop while the orchestrator plans and reviews. You never have to remember which skill comes next.
 - **Repo & worktree discipline** — the `repo` skill routes every repo/worktree operation through a generated `scripts/repo.sh`, blocks raw `git clone` / `worktree add`, and warns before you build on a stale worktree. Dependent slices can **stack** on an in-review branch so work never stalls.
-- **Independent PR review** — the orchestrator spawns two fresh review agents (neither saw the implementation) at the `pr-security-review` gate, which holds `gh pr create` until they sign off: an `implementation-validator` checks the diff against the slice's acceptance criteria, then a `security-reviewer` checks it against bundled checklists.
+- **Independent review at two seams** — both reviews use a fresh agent that never saw the implementation. **Acceptance is checked right after the build, not at the PR:** the moment the `tdd-implementer` finishes, `/next` spawns an `implementation-validator` against the slice's acceptance criteria and **loops back to `tdd`** on a critical gap — the task never reaches `done` (or a PR) until it delivers what it promised. **Security is checked at the PR gate:** `pr-security-review` holds `gh pr create` until a `security-reviewer` signs off against bundled checklists.
 
 Everything is **project-local**: skills, hooks, and agents are copied into the workspace and wired automatically, so it stays self-contained and portable.
 
@@ -29,11 +29,12 @@ main session · orchestrator (Opus)
       ├─ /tdd (hand-invoked) .. Opus runs the loop inline — for ad-hoc builds
       │
       ├─ /next builds a task .. spawns  tdd-implementer (Sonnet) → tests + code  ┐
-      └─ gh pr create ........ spawns  implementation-validator → acceptance     │ fresh
-                                       security-reviewer        → security       ┘ context
+      │                         then    implementation-validator → acceptance    │ fresh
+      │                                   └─ BLOCK loops back to tdd-implementer  │ context
+      └─ gh pr create ........ spawns  security-reviewer         → security       ┘
 ```
 
-The build **loop** is non-interactive: an AFK task's design was settled upstream (grilling, confirmed in `/to-prd` and `/to-issues`), so its acceptance criteria are the contract. A **HITL** task is flagged because it needs human input — the orchestrator gathers that input *first*, then the loop runs non-interactively like any other. Two ways to build, by caller: **hand-invoke `/tdd`** when you want Opus to do the TDD itself for an ad-hoc request (it runs the loop inline, with you watching); **`/next`** builds pipeline tasks by spawning the Sonnet `tdd-implementer` sub-agent on a fresh context (gathering any HITL input up front), so the orchestrator just plans/reviews. Every sub-agent — the implementer and the two PR-gate reviewers — starts clean, keeping the heavy, repeatable work on the cheaper model without inheriting a long session's drift.
+The build **loop** is non-interactive: an AFK task's design was settled upstream (grilling, confirmed in `/to-prd` and `/to-issues`), so its acceptance criteria are the contract. A **HITL** task is flagged because it needs human input — the orchestrator gathers that input *first*, then the loop runs non-interactively like any other. Two ways to build, by caller: **hand-invoke `/tdd`** when you want Opus to do the TDD itself for an ad-hoc request (it runs the loop inline, with you watching); **`/next`** builds pipeline tasks by spawning the Sonnet `tdd-implementer` sub-agent on a fresh context (gathering any HITL input up front), so the orchestrator just plans/reviews. Every sub-agent — the implementer, the post-build acceptance validator, and the PR-gate security reviewer — starts clean, keeping the heavy, repeatable work on the cheaper model without inheriting a long session's drift.
 
 ## Quick start
 
@@ -52,8 +53,8 @@ From there you rarely pick a skill by hand — **`/next` routes you.** It reads 
 | Grill | no PRD yet | `/grill-with-docs` → `/to-prd` |
 | Slice | PRD exists, no tasks | `/to-issues` |
 | Pick | tasks exist, none active | next unblocked task → build via `tdd-implementer` sub-agent (HITL input gathered first) |
-| Build | a task is active | continue the build via the sub-agent |
-| Land | task done, not PR'd | the PR-review gate |
+| Build | a task is active | continue the build via the sub-agent; post-build acceptance gate loops back here on a gap |
+| Land | task done, not PR'd | the security review at `gh pr create` (acceptance already passed) |
 
 The planning arc auto-chains in one session; building breaks to a fresh session per task to resist context drift.
 
@@ -130,9 +131,9 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/grill-with-docs` | Interviews you relentlessly to find holes in a rough idea; sharpens `CONTEXT.md`, offers ADRs |
 | `/to-prd` | Synthesizes the conversation into a structured PRD (Jira issue or `docs/plans/`) |
 | `/to-issues` | Breaks the PRD into vertical-slice issues marked AFK (autonomous) or HITL (needs a human) |
-| `/tdd` | Red-green-refactor, one test at a time; the build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent |
+| `/tdd` | Red-green-refactor, one test at a time; the build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent, then runs the post-build acceptance gate |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
-| `/pr-security-review` | Independent acceptance + security review before `gh pr create` |
+| `/pr-security-review` | Independent security review before `gh pr create` (acceptance is validated earlier, by `/next`'s post-build gate) |
 | `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks) |
 | `/sync-status` | Regenerates `STATUS.md` from current state (mostly automatic via hooks) |
 | `/codebase-researcher` | Optional read-only codebase mapper; writes findings to `docs/research/` |

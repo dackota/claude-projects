@@ -276,35 +276,36 @@ or just `repo.sh worktree <task> <repo>` when the task has exactly one unmerged
 blocker in `project.yaml` (auto-derived). The stack pointer is the branch's git
 upstream — `sync` then merges the parent's review-fix commits, and re-points to
 the base automatically once the parent merges (the stacked PR retargets). If a
-stacked parent is **reopened** (e.g. a validator loop-back flips it back to
-`active`), `repo.sh status` flags the child as **BASE REOPENED** — it is building
-on shifting ground; `repo.sh` never auto-rebases a disturbed stack, so reconcile
-it deliberately.
+stacked parent is **reopened** (a security-review or manual reopen — acceptance is
+settled before a task is marked done, so it won't be that), `repo.sh status` flags
+the child as **BASE REOPENED** — it is building on shifting ground; `repo.sh` never
+auto-rebases a disturbed stack, so reconcile it deliberately.
 
-## Pull requests — independent review first (acceptance + security)
+## Independent review — acceptance at build time, security at PR time
 
-When the `pr-security-review` skill is installed (bundled by default), `gh pr create`
-is gated by a **unified PR-review gate**. The skill runs two independent agents
-(neither of which saw the implementation) on the diff, in order:
+Two independent reviews guard a slice, each by a fresh agent that never saw the
+implementation conversation — and they run at **different moments**:
 
-1. **Acceptance** — `implementation-validator` checks the slice's diff against its
-   task's acceptance criteria. A CRITICAL gap (a promised behavior undelivered)
-   blocks and **loops back**: the task flips `done → active` and re-enters `tdd`.
-2. **Security** — `security-reviewer` checks the change against the code/infra
-   checklists.
+1. **Acceptance — right after the build (not at the PR).** When `/next` builds a
+   task, the moment the `tdd-implementer` finishes, `/next` commits the slice and
+   spawns the `implementation-validator` to check the diff against the task's
+   acceptance criteria. A CRITICAL gap (a promised behavior undelivered) **loops
+   straight back to `tdd`** — the task stays `active` and never reaches `done` (let
+   alone a PR) until acceptance passes. This catches "doesn't do what it promised"
+   in seconds, not at PR review.
+2. **Security — at the PR gate.** When the `pr-security-review` skill is installed
+   (bundled by default), `gh pr create` is gated by a security review:
+   `security-reviewer` checks the change against the code/infra checklists. It
+   records a verdict under `.git/pr-security-review/<sha>`; a CRITICAL blocks until
+   fixed (each fix is a new commit, which re-reviews automatically), HIGH/MEDIUM/LOW
+   are noted in the PR body but pass.
 
-It records **one** verdict under `.git/pr-security-review/<sha>` and folds both
-lenses into the PR body. CRITICAL (either lens) blocks until fixed (each fix is a
-new commit, which re-reviews automatically); HIGH/MEDIUM/LOW are noted but pass.
-
-When does the gate require a review (no recorded verdict)? **Acceptance** applies
-to every **slice PR** — a branch that is a task in `project.yaml`, any size; if
-the branch isn't a task it warns and falls back to security only. **Security**
-applies when the diff touches **infra** (any size) or is a **code change over
+When does the **PR security gate** require a review (no recorded verdict)? When the
+diff touches **infra** (any size) or is a **code change over
 `PR_SECURITY_MAX_SMALL_LINES` lines** (default 25); small code-only and docs-only
-diffs skip the security lens. You can always run the `pr-security-review` skill by
-hand — a recorded verdict is honored over any skip rule. The gate covers CLI
-`gh pr create` only — `--web` and the GitHub UI bypass it.
+diffs skip. You can always run the `pr-security-review` skill by hand — a recorded
+verdict is honored over any skip rule. The gate covers CLI `gh pr create` only —
+`--web` and the GitHub UI bypass it.
 
 ## CONTEXT.md — domain glossary
 

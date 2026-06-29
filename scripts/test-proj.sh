@@ -319,28 +319,22 @@ unset PR_SECURITY_MAX_SMALL_LINES
 assert "gate: ignores non-create gh (pr list)"      "$([[ "$(prgate 'gh pr list')" == "0" ]] && echo true || echo false)"
 assert "gate: ignores non-gh commands"              "$([[ "$(prgate 'git status')" == "0" ]] && echo true || echo false)"
 
-# ── unified PR gate: acceptance via task derivation + warn-fallback ───────────
-assert "pr-review: implementation-validator agent"  "$([[ -f $RT/.claude/agents/implementation-validator.md ]] && echo true || echo false)"
-
+# ── PR gate is security-only: a task branch is no longer force-reviewed ───────
+# Acceptance moved to /next's post-build gate, so the PR hook applies security
+# rules only — a slice-task branch with a non-security diff now skips (the old
+# "branch is a task -> require review" acceptance trigger is gone).
 if command -v yq >/dev/null 2>&1 && [[ -d "$RT/worktrees/slice-2/remote" ]]; then
   WT2="$RT/worktrees/slice-2/remote"
   WT2_GITDIR="$(git -C "$WT2" rev-parse --absolute-git-dir)"
-  WT2_SHA="$(git -C "$WT2" rev-parse HEAD)"
   prg() { # prg <command> <cwd> -> exit code
     local rc=0
     echo "{\"tool_input\":{\"command\":\"$1\"},\"cwd\":\"$2\"}" | bash "$PR_GATE" >/dev/null 2>&1 || rc=$?
     echo "$rc"
   }
-  # Branch 'slice-2' is a task in project.yaml -> acceptance applies -> require review.
-  rm -f "$WT2_GITDIR/pr-security-review/$WT2_SHA"
-  assert "gate: slice task requires review"          "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "2" ]] && echo true || echo false)"
-  # A recorded PASS verdict lets the slice PR through.
-  mkdir -p "$WT2_GITDIR/pr-security-review"
-  printf 'PASS\nACCEPTANCE PASS C:0 H:0 M:0 L:0\nSECURITY PASS C:0 H:0 M:0 L:0\n' > "$WT2_GITDIR/pr-security-review/$WT2_SHA"
-  assert "gate: PASS verdict allows slice PR"        "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "0" ]] && echo true || echo false)"
-  # Off-convention branch (not a task) in a workspace -> warn that acceptance was skipped.
-  WARN_OUT="$(echo "{\"tool_input\":{\"command\":\"gh pr create -t x\"},\"cwd\":\"$RT/repos/remote\"}" | bash "$PR_GATE" 2>&1 1>/dev/null || true)"
-  assert "gate: non-task branch warns acceptance"    "$(echo "$WARN_OUT" | grep -qi 'acceptance' && echo true || echo false)"
+  # slice-2 is a task in project.yaml with a docs/.txt-only diff -> security rules
+  # only -> no review required (the old acceptance trigger would have blocked it).
+  rm -rf "$WT2_GITDIR/pr-security-review"
+  assert "gate: task branch not force-reviewed"      "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "0" ]] && echo true || echo false)"
 fi
 
 # ── next skill: orchestrator install + dependency resolution ──────────────────
@@ -352,6 +346,7 @@ assert "next: companion to-prd pulled"              "$([[ -d $NT/.claude/skills/
 assert "next: companion to-issues pulled"           "$([[ -d $NT/.claude/skills/to-issues ]] && echo true || echo false)"
 assert "next: companion tdd pulled"                 "$([[ -d $NT/.claude/skills/tdd ]] && echo true || echo false)"
 assert "next: tdd-implementer agent wired"          "$([[ -f $NT/.claude/agents/tdd-implementer.md ]] && echo true || echo false)"
+assert "next: implementation-validator agent wired" "$([[ -f $NT/.claude/agents/implementation-validator.md ]] && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"

@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash) hook: gate `gh pr create` on the unified PR review
-# (acceptance + security).
+# PreToolUse(Bash) hook: gate `gh pr create` on the PR security review.
+#
+# Acceptance (does the slice deliver what it promised?) is validated earlier, by
+# /next's post-build gate — NOT here. This gate is the security lens only.
 #
 # Decision order for the current HEAD commit:
 #   1. A verdict already recorded (manual or prior run) -> honor it (PASS allow,
 #      BLOCK block). A manual `/pr-security-review` therefore always wins.
-#   2. No verdict, branch is a task in the workspace project.yaml (a slice PR) ->
-#      require review: every slice is acceptance-validated, any size. If the
-#      branch is not a task, warn that acceptance was skipped and fall through to
-#      the security rules below (warn-and-fall-back).
-#   3. No verdict, infra files in the diff -> require review (any size — a
+#   2. No verdict, infra files in the diff -> require review (any size — a
 #      one-line IAM/security-group/bucket change is the small-but-critical case).
-#   4. No verdict, no security-relevant files (docs/config only) -> allow.
-#   5. No verdict, code-only and <= PR_SECURITY_MAX_SMALL_LINES (default 25)
+#   3. No verdict, no security-relevant files (docs/config only) -> allow.
+#   4. No verdict, code-only and <= PR_SECURITY_MAX_SMALL_LINES (default 25)
 #      changed lines -> allow (small change skips; review still available by
 #      running the pr-security-review skill manually).
-#   6. Otherwise (larger code change) -> require review.
+#   5. Otherwise (larger code change) -> require review.
 #
 # Reads the Claude Code PreToolUse payload (JSON) on stdin.
 
@@ -46,27 +44,7 @@ if [[ -f "$verdict_file" ]]; then
   esac
 fi
 
-# No verdict yet.
-# 2. Acceptance: in a workspace, a branch that is a task is a slice PR and must be
-#    acceptance-validated at any size. Off-convention branches warn and fall back.
-ws=""; d="$cwd"
-while [[ "$d" != "/" ]]; do
-  [[ -f "$d/project.yaml" ]] && { ws="$d"; break; }
-  d="$(dirname "$d")"
-done
-if [[ -n "$ws" ]]; then
-  branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  # Escape regex metacharacters so a branch like `feat.v2` can't false-match a
-  # different task id (`.` is a regex wildcard in the pattern below).
-  branch_re="$(printf '%s' "$branch" | sed 's/[^[:alnum:]_-]/\\&/g')"
-  if [[ -n "$branch" ]] && grep -qE "id:[[:space:]]*\"?${branch_re}\"?[[:space:]]*$" "$ws/project.yaml" 2>/dev/null; then
-    block "slice '$branch' needs a unified PR review (acceptance + security). Run the pr-security-review skill, then re-run gh pr create."
-  else
-    echo "🔓 PR review gate: acceptance validation skipped — branch '${branch:-?}' is not a task in project.yaml; applying security rules only." >&2
-  fi
-fi
-
-# Decide whether the security lens is exempt.
+# No verdict yet. Decide whether the security lens is exempt.
 MAX="${PR_SECURITY_MAX_SMALL_LINES:-25}"
 
 base="$(git -C "$cwd" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
@@ -79,15 +57,15 @@ if ! dims="$( cd "$cwd" && bash "$classify" "$base" 2>/dev/null )"; then
   block "couldn't classify the diff — run the pr-security-review skill manually to review before opening the PR."
 fi
 
-# 3. Infra (even one line) always requires review.
+# 2. Infra (even one line) always requires review.
 case " $dims " in
   *" infra "*) block "infra changes require a security review at any size. Run the pr-security-review skill, then re-run gh pr create." ;;
 esac
 
-# 4. No security-relevant files (docs/config only) -> allow.
+# 3. No security-relevant files (docs/config only) -> allow.
 [[ -z "${dims// /}" ]] && exit 0
 
-# 5/6. Code-only: skip when small, else require review.
+# 4/5. Code-only: skip when small, else require review.
 mb="$(git -C "$cwd" merge-base "$base" HEAD 2>/dev/null || echo "$base")"
 stat="$(git -C "$cwd" diff --shortstat "$mb...HEAD" 2>/dev/null || true)"
 ins="$(printf '%s' "$stat" | grep -oE '[0-9]+ insertion' | grep -oE '^[0-9]+' || true)"

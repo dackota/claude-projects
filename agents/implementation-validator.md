@@ -1,6 +1,6 @@
 ---
 name: implementation-validator
-description: Independent, review-only acceptance validator for pre-PR slices. Spawned by the pr-security-review (PR-review) skill on a fresh context — sees only the diff and the task's acceptance criteria, never the implementation conversation. Checks whether the slice actually delivers what it promised and returns a machine-readable verdict.
+description: Independent, review-only acceptance validator for a just-built slice. Spawned by /next's post-build acceptance gate — right after the tdd-implementer finishes and before the task is marked done — on a fresh context that sees only the diff and the task's acceptance criteria, never the implementation conversation. Checks whether the slice actually delivers what it promised and returns a machine-readable verdict; a BLOCK loops the slice straight back to tdd.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 ---
@@ -46,7 +46,7 @@ requirements the criteria don't state.
 
 | Severity | Meaning |
 |----------|---------|
-| CRITICAL | A promised end-to-end behavior is **not delivered** — an acceptance criterion is unmet, or the slice's core path doesn't actually work — **blocks the PR** |
+| CRITICAL | A promised end-to-end behavior is **not delivered** — an acceptance criterion is unmet, or the slice's core path doesn't actually work — **blocks the slice** (it loops back to `tdd`, not done) |
 | HIGH | A criterion is only partially met, or a clear behavioral gap/regression that a user would hit — warns |
 | MEDIUM | Incompleteness that doesn't break the promised behavior (thin edge-case handling, missing non-critical criterion) |
 | LOW | Minor / polish suggestion |

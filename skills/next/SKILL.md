@@ -2,6 +2,8 @@
 name: next
 description: Workflow router for a claude-projects workspace. Reads workspace state, determines the current lifecycle phase, and recommends (and routes to) the next action — grill-with-docs → to-prd → to-issues → tdd → PR. Use at session start or any time you ask "where am I / what's next?".
 origin: claude-projects
+agents:
+  - implementation-validator
 ---
 
 # /next — the workflow router
@@ -15,7 +17,8 @@ It is a **dispatcher, not an autopilot**, and it **complements** the phase skill
 directly invokable by hand. `/next` just spares you the routing decision.
 
 > `/next` covers the full flow: phase detection (local **and Jira** mode),
-> auto-dispatch with session seams, the acceptance-validator gate, acceptance
+> auto-dispatch with session seams, the **post-build acceptance-validator gate**
+> (run right after the build, before the task is marked done), acceptance
 > loop-back, and stacked-worktree integration.
 
 ## How to run
@@ -74,8 +77,8 @@ Apply the state machine. The first row whose detection holds is the phase:
 | **Grill** | no active PRD in `docs/plans/` | Run `grill-with-docs`; on shared understanding, `to-prd` (the Grill→Slice transition) |
 | **Slice** | a PRD exists, but `tasks[]` is empty | Run `to-issues` to break the PRD into vertical slices |
 | **Pick** | tasks exist, none `active` | Pick the next unblocked task, then build it via the `tdd-implementer` sub-agent (a HITL task gathers human input first) — see selection + dispatch rules |
-| **Build** | a task is `active` | Continue building it via the sub-agent |
-| **Land** | a task is `done` but not yet PR'd | Open the PR (the PR-review gate runs at `gh pr create`) |
+| **Build** | a task is `active` | Continue building it via the sub-agent — including closing any gaps the post-build acceptance gate flagged |
+| **Land** | a task is `done` but not yet PR'd | Open the PR (acceptance is already validated; the security review runs at `gh pr create`) |
 | **Done** | all tasks `done` and landed | Project complete — nothing to route |
 
 Notes:
@@ -153,9 +156,26 @@ disposable. For each build:
    `CONTEXT.md` vocabulary, relevant ADRs, the working directory, and the test
    command. It derives the plan and runs the red-green-refactor loop, returning a
    `COMPLETE | PARTIAL | BLOCKED` summary. Review it (re-run the tests; check the
-   tests are behavioral, not implementation-coupled), flip `active → done` on a
-   clean pass, and proceed to the PR gate. On `BLOCKED` — a fork that surfaced
-   mid-build — gather any further input the user needs to settle it and re-spawn.
+   tests are behavioral, not implementation-coupled). On `BLOCKED` — a fork that
+   surfaced mid-build — gather any further input the user needs to settle it and
+   re-spawn. Do **not** flip the task `done` yet — the acceptance gate runs first.
+4. **Post-build acceptance gate (don't wait for the PR).** Once your own review of
+   a `COMPLETE` summary is clean, **commit the slice** in the worktree, then spawn
+   the `implementation-validator` (Agent tool, `subagent_type: implementation-validator`)
+   on a **fresh context** to verify the slice against its contract *before* it is
+   marked done. Give it only the diff range (`<base>...HEAD`) + changed files and
+   the task's acceptance criteria / "what to build" — **not** the implementation
+   rationale; independence is the point. It returns `VERDICT: PASS | BLOCK`
+   (`BLOCK` iff `CRITICAL > 0`).
+   - **PASS** → flip the task `active → done` and proceed to **Land** (the PR's
+     security review still runs at `gh pr create`; acceptance is already done).
+   - **BLOCK** → the slice doesn't deliver what it promised. Leave the task
+     `active`, write a `blocker` journal entry with the CRITICAL gaps, and
+     **re-spawn the `tdd-implementer`** framed as *closing the flagged acceptance
+     gaps* — pass it the validator's CRITICAL findings, not a fresh build. Its
+     fixes are new commits → re-run the validator on the new `HEAD`. Loop until
+     `PASS`. This keeps the loop-back cheap and local — the task never reaches a PR
+     (or even `done`) until acceptance passes.
 
 Invoking `/tdd` by hand is different: it runs the loop **inline in the main agent**
 (Opus) for an ad-hoc build — see the `tdd` skill's main-agent mode. `/next` always
@@ -165,18 +185,22 @@ takes the sub-agent path.
   marker, and that other unblocked tasks exist if they do). On accept, build it as
   above; the user may name a different unblocked task instead.
 - **Build**: a task is already `active` → continue building it — re-dispatch to the
-  sub-agent with the prior summary and what's left. If it was reopened by a
-  validator loop-back (it went `done → active` with a recent `blocker` journal
-  entry), frame the work as *closing the flagged acceptance gaps* — read the gate's
-  CRITICAL findings first and pass them to the sub-agent — not as starting fresh.
+  sub-agent with the prior summary and what's left. If the most recent `blocker`
+  journal entry is a **post-build acceptance gate** failure (the validator returned
+  `BLOCK`; the task stayed `active`), frame the work as *closing the flagged
+  acceptance gaps* — read the gate's CRITICAL findings first and pass them to the
+  sub-agent — not as starting fresh. Re-run the acceptance gate (step 4) on the new
+  `HEAD` before the task can move on.
 
 **Stacked work (when the task touches a code repo).** Create the worktree through
 `scripts/repo.sh worktree <task> <repo>` — if the task's blocker is still in
 review (its branch exists but isn't merged) it auto-stacks on that branch (or pass
 `--onto <blocker>` to disambiguate), so dependent work doesn't stall waiting on
 review. Before continuing on a stacked task, check `scripts/repo.sh status`: a
-**BASE REOPENED** flag means the parent looped back to `active` (an acceptance
-loop-back) — warn the user and reconcile deliberately; never auto-rebase.
+**BASE REOPENED** flag means the parent went back to `active` after the child
+stacked on it (a security-review reopen, or a manual reopen — acceptance is settled
+pre-`done`, so it won't be that) — warn the user and reconcile deliberately; never
+auto-rebase.
 
 For interactive phase *entry* (grill, and the human-input step of a HITL build)
 engage once the user is ready; an AFK build runs straight through the sub-agent,
