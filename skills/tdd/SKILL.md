@@ -31,7 +31,12 @@ invoked it**:
   autonomous pipeline path. For a HITL task `/next` gathers the needed human input
   first (it can talk to the user; the sub-agent can't), then hands it to the
   sub-agent. The orchestrator flips the task `active`, spawns the sub-agent, reviews
-  its `COMPLETE | PARTIAL | BLOCKED` summary, and closes out — keeping the
+  its `COMPLETE | PARTIAL | BLOCKED` summary, then runs the **post-build acceptance
+  gate**: it commits the slice and spawns a fresh `implementation-validator` to
+  check the diff against the acceptance criteria *before* marking the task done. A
+  `BLOCK` (a promised behavior undelivered) loops straight back to this sub-agent
+  with the gate's findings — the task never reaches `done` (or a PR) until
+  acceptance passes. Only on `PASS` does the orchestrator close out. This keeps the
   orchestrator lean and the implementation tokens on the cheaper model. The
   sub-agent follows the same discipline below.
 
@@ -140,9 +145,13 @@ When the task's behaviors are all GREEN and refactored:
 - Flip the `project.yaml` task `status` to `done` — the journal's `done` signal (skip for an ad-hoc request with no task).
 - For a meaningful plan or milestone (not every task), write a validation doc to `docs/validations/` with the evidence (commands run, `path:line`, test output) and reference it from the `done` journal entry.
 
-The independent acceptance check happens later, at the PR gate
-(`pr-security-review` spawns `implementation-validator`) — close-out here is your
-own confidence that the slice is done, not the final word.
+In subagent mode (`/next`), an **independent acceptance check** runs immediately
+after this loop — `/next` commits the slice and spawns a fresh
+`implementation-validator` against the acceptance criteria before the task is
+marked done; a `BLOCK` loops straight back here. In inline mode there is no
+auto-gate (you're watching live) — close-out here is your own confidence that the
+slice is done; run `/pr-security-review` by hand if you want an independent pass.
+Either way, security is reviewed later at the PR gate.
 
 ## Checklist Per Cycle
 

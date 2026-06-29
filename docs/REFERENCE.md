@@ -110,8 +110,8 @@ Hook-bearing skills (`journal`, `sync-status`, `repo`, `pr-security-review`) als
 | Grill | no PRD yet | `grill-with-docs` (then `to-prd` on shared understanding) |
 | Slice | PRD exists, no tasks | `to-issues` |
 | Pick | tasks exist, none active | next unblocked task → build via `tdd-implementer` sub-agent (HITL: gather human input first) |
-| Build | a task is active | continue the build via the sub-agent |
-| Land | task done, not PR'd | the unified PR-review gate |
+| Build | a task is active | continue the build via the sub-agent; the post-build acceptance gate loops back here on a gap |
+| Land | task done, not PR'd | open the PR — the security review runs at `gh pr create` (acceptance already passed) |
 
 The planning arc (grill → prd → issues) auto-chains in one session with a light confirm at each gate; building breaks to a **fresh session per task** to resist context drift. When a picked task depends on an in-review slice, `/next` stacks its worktree on that branch (via `repo.sh`) so work doesn't stall, and warns if a stacked base was reopened.
 
@@ -163,12 +163,23 @@ scripts/repo.sh list                                       # registered repos
 
 `repo.sh` requires `yq` (v4) for `project.yaml` writes. On an existing workspace, `proj update-skills` installs `repo.sh` and merges the hooks in without disturbing your other settings.
 
-## /pr-security-review — the unified PR-review gate
+## Independent review — acceptance at build time, security at PR time
 
-Holds `gh pr create` until an **independent** review signs off — fresh agents that never saw the implementation review the diff with skeptical eyes, which catches what self-review rationalizes away. The review has two lenses, run in order: **acceptance** (does the slice deliver what it promised?), then **security** (is it safe?). Bundles two checklist skills plus two agents:
+Two independent reviews guard each slice — both by a fresh agent that never saw the implementation, which catches what self-review rationalizes away — but they fire at **different seams**:
 
-- **`implementation-validator`** — a review-only agent that checks the diff against the slice's acceptance criteria (derived from the branch's `project.yaml` task → its PRD/issue). A CRITICAL gap means a promised behavior is undelivered: it blocks and **loops the task back** (`done → active`) into `tdd`.
-- **`security-reviewer`** — a review-only agent (no `Write`/`Edit`) that checks the change against the bundled `security-review` (app-code) and `cloud-infra-security` (cloud/IaC) checklists. Both agents are copied into `.claude/agents/` via the skill's `agents:` frontmatter.
+### Acceptance — the post-build gate (`/next`)
+
+When `/next` builds a task, the moment the `tdd-implementer` returns a `COMPLETE` summary and the orchestrator's own review is clean, `/next` **commits the slice** and spawns the **`implementation-validator`** on a fresh context to check the diff against the task's acceptance criteria (derived from the branch's `project.yaml` task → its PRD/issue) *before* the task is marked done.
+
+- A CRITICAL gap (a promised behavior undelivered) **loops the slice straight back to `tdd`**: the task stays `active`, a `blocker` journal entry records the gaps, and the `tdd-implementer` is re-spawned with the findings to close them. Each fix is a new commit → the validator re-runs on the new `HEAD`. The task never reaches `done` (let alone a PR) until acceptance passes — so "doesn't do what it promised" is caught in seconds, not at PR review.
+- The `implementation-validator` is review-only (no `Write`/`Edit`) and is copied into `.claude/agents/` via the `next` skill's `agents:` frontmatter.
+- This gate is part of the `/next` **subagent** build only. Hand-invoked `/tdd` runs inline with you watching, so there is no auto-gate — your own review is the acceptance check.
+
+### Security — the PR gate (`/pr-security-review`)
+
+Holds `gh pr create` until an independent **security** review signs off. (Acceptance is already done by the time a PR opens, so the PR gate is security-only.) Bundles the security agent plus its two checklists:
+
+- **`security-reviewer`** — a review-only agent (no `Write`/`Edit`) that checks the change against the bundled `security-review` (app-code) and `cloud-infra-security` (cloud/IaC) checklists.
 - **`security-review`** and **`cloud-infra-security`** — the checklists, bundled so each workspace is self-contained; the global `~/.claude/skills/` copies become symlinks back to these.
 
 How it flows:
@@ -177,20 +188,18 @@ How it flows:
 gh pr create
   -> hook: verdict recorded for HEAD <sha>?
        yes -> honor it (PASS allow / CRITICAL block)
-       no  -> branch is a task (a slice PR)? -> BLOCK: review required (acceptance, any size)
-              not a task in a workspace?     -> warn (acceptance skipped), fall back to security rules:
-                infra in diff?               -> BLOCK: review required (any size)
-                code-only & <= 25 lines?     -> allow (small change skips)
-                docs/config only?            -> allow
-                else (larger code)           -> BLOCK: review required
+       no  -> infra in diff?           -> BLOCK: security review required (any size)
+              code-only & <= 25 lines? -> allow (small change skips)
+              docs/config only?        -> allow
+              else (larger code)       -> BLOCK: security review required
   /pr-security-review (run on block, or manually anytime):
-     derive task -> implementation-validator (acceptance) -> security-reviewer (security)
-     -> one verdict@<sha> in .git/pr-security-review/
-     CRITICAL (either lens) -> blocks PR (fix -> new commit -> auto re-review)
-     PASS                   -> both lenses folded into PR body, gh pr create allowed
+     classify diff -> security-reviewer (security)
+     -> verdict@<sha> in .git/pr-security-review/
+     CRITICAL -> blocks PR (fix -> new commit -> auto re-review)
+     PASS     -> security summary folded into PR body, gh pr create allowed
 ```
 
-Acceptance applies to every slice PR (a branch that is a task in `project.yaml`) regardless of size; if the task can't be derived from the branch, the gate warns and falls back to security-only. Security classification is path-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both — small code-only diffs skip the *security* lens (≤ 25 changed lines; override with `PR_SECURITY_MAX_SMALL_LINES`). You can run `/pr-security-review` by hand on any change, and a recorded verdict always wins. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
+Security classification is path-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both — small code-only diffs skip (≤ 25 changed lines; override with `PR_SECURITY_MAX_SMALL_LINES`), as do docs/config-only diffs. You can run `/pr-security-review` by hand on any change, and a recorded verdict always wins. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
 
 ## Phase skills
 
@@ -224,7 +233,7 @@ Use it after `/to-prd` to turn the spec into a concrete backlog.
 Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. The **loop never requires interaction**: an AFK task's design was settled upstream (grilling → `to-prd` → `to-issues`), so its acceptance criteria are a complete contract. A **HITL** task is the exception — it was flagged because it needs human input (a decision the upstream phases couldn't settle); that input is gathered *before* the loop, which then runs non-interactively. Two ways it runs, by who invoked it:
 
 - **Hand-invoked → main-agent mode.** You run `/tdd` directly and the main agent (Opus) runs the loop **inline** — the path for an ad-hoc request where you want the main model doing the implementation itself, with you watching. It derives the plan from the acceptance criteria (or the request) and runs; no planning gate. The user is in-session, so for a HITL task (or a genuine question) it just asks, then continues.
-- **`/next` build → subagent mode.** For a HITL task, `/next` first gathers the human input the task needs (it can talk to the user; the sub-agent can't). Then it flips the task `todo → active`, sets up the worktree, and spawns the Sonnet **`tdd-implementer`** sub-agent on a fresh context with the criteria (plus any gathered HITL input). The sub-agent derives the plan, runs the loop, and returns a `COMPLETE | PARTIAL | BLOCKED` summary; `/next` reviews it (re-running tests, checking the tests are behavioral), flips `active → done` on a clean pass, and proceeds to the PR gate. A fork that surfaces mid-build comes back as `BLOCKED` (reactive, not a routine gate). This path keeps the orchestrator lean and the implementation tokens on Sonnet.
+- **`/next` build → subagent mode.** For a HITL task, `/next` first gathers the human input the task needs (it can talk to the user; the sub-agent can't). Then it flips the task `todo → active`, sets up the worktree, and spawns the Sonnet **`tdd-implementer`** sub-agent on a fresh context with the criteria (plus any gathered HITL input). The sub-agent derives the plan, runs the loop, and returns a `COMPLETE | PARTIAL | BLOCKED` summary; `/next` reviews it (re-running tests, checking the tests are behavioral), then runs the **post-build acceptance gate** — it commits the slice and spawns a fresh `implementation-validator` against the acceptance criteria, looping back to the sub-agent on a CRITICAL gap, and only flipping `active → done` once acceptance passes (then proceeding to the security PR gate). A fork that surfaces mid-build comes back as `BLOCKED` (reactive, not a routine gate). This path keeps the orchestrator lean and the implementation tokens on Sonnet.
 
 Use it when starting implementation of any issue produced by `/to-issues`.
 
@@ -234,12 +243,12 @@ A read-only codebase mapper: traces execution paths, maps architecture layers, a
 
 ## Typical workflow
 
-These skills compose into a repeatable process from idea to shipped code — and **`/next` routes you through it**, so the steps below are what happens phase by phase, not a sequence you drive by hand. Throughout, the `repo` skill keeps each task isolated in its own worktree (stacking dependent slices when needed), and the PR-review gate vets the diff with two independent agents — acceptance then security — before any PR opens.
+These skills compose into a repeatable process from idea to shipped code — and **`/next` routes you through it**, so the steps below are what happens phase by phase, not a sequence you drive by hand. Throughout, the `repo` skill keeps each task isolated in its own worktree (stacking dependent slices when needed), and two independent agents vet the work — an `implementation-validator` checks acceptance right after the build (looping back to `tdd` on a gap), and a `security-reviewer` checks security before any PR opens.
 
 1. **Explore the idea — `/grill-with-docs`** — Claude interviews you until every major design branch is resolved, sharpening `CONTEXT.md` and recording hard-to-reverse decisions as ADRs.
 2. **Write the spec — `/to-prd`** — Claude synthesizes the conversation into a full PRD and publishes it to Jira (or `docs/plans/`). No additional input needed.
 3. **Break it into issues — `/to-issues`** — decompose the PRD into vertical slices. Review granularity, HITL/AFK calls, and dependency order, then approve.
-4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). `/next` builds the task by spawning a Sonnet `tdd-implementer` sub-agent that derives the plan from the acceptance criteria and writes one failing test → minimal code → refactor, returning a summary the orchestrator reviews — for a HITL task `/next` gathers the human input it needs first, then the loop runs non-interactively. (Hand-invoke `/tdd` instead when you want Opus to build inline for an ad-hoc request — same loop, in the main agent.) `gh pr create` triggers the PR-review gate; a critical acceptance gap loops the task back into the build.
+4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). `/next` builds the task by spawning a Sonnet `tdd-implementer` sub-agent that derives the plan from the acceptance criteria and writes one failing test → minimal code → refactor, returning a summary the orchestrator reviews — for a HITL task `/next` gathers the human input it needs first, then the loop runs non-interactively. (Hand-invoke `/tdd` instead when you want Opus to build inline for an ad-hoc request — same loop, in the main agent.) Right after the build, the **post-build acceptance gate** validates the slice against its criteria and loops it back into the build on a critical gap — so the task only reaches `done` once it delivers what it promised. `gh pr create` then triggers the security review.
 5. **Log events as they happen — `/journal`** — significant events get logged immediately. The `PostToolUse` hook catches most file-write events automatically.
 6. **Sync the status view — `/sync-status`** — at session end, `STATUS.md` regenerates from current state. The `Stop` hook fires automatically when `journal.yaml` is newer than `STATUS.md`.
 7. **Resume the next session** — Claude reads `STATUS.md` first — a ~500-token synthesis of where the project is, what's active, blocked, and next. No re-orientation cost.
