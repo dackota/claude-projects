@@ -6,3 +6,4 @@ worktrees/
 # the user-facing repo. (In scaffolded workspaces these ARE tracked.)
 docs/adr/
 docs/plans/
+project.yaml
