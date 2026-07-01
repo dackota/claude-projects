@@ -152,3 +152,7 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 **[docs/REFERENCE.md](docs/REFERENCE.md)** covers the internals: the living-status files (`STATUS.md` / `journal.yaml` schemas), doc-lifecycle frontmatter, `CONTEXT.md` and ADR conventions, the issue-tracker / task model, the full `/next` routing logic, every `repo.sh` subcommand, the PR-review gate flow, and the hooks each skill wires in.
 
 > The living-status approach is inspired by [Give Your AI Unlimited, Updated Context](https://towardsdatascience.com/give-your-ai-unlimited-updated-context/).
+
+## License
+
+[MIT](LICENSE) © 2026 Dackota Johnson. Several bundled skills are adapted from the MIT-licensed [mattpocock/skills](https://github.com/mattpocock/skills) — see [CREDITS.md](CREDITS.md).
