@@ -1,6 +1,6 @@
 ---
 name: sync-status
-description: Regenerate STATUS.md for the current claude-projects workspace by synthesizing PROJECT.md, project.yaml, journal.yaml, and all active docs. Invoke after a significant change (plan finalized, decision committed, task status flipped, blocker recorded) AND at a natural pause (handing back to the user, finishing a logical work block).
+description: Regenerate STATUS.md for a claude-projects workspace from its authoritative inputs. Use when a significant change has landed (plan/decision/task-status/blocker) AND you've reached a natural pause (handing back, finishing a work block) — the conjunction is deliberate.
 origin: claude-projects
 ---
 

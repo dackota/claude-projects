@@ -1,6 +1,6 @@
 ---
 name: journal
-description: Append a single typed entry to journal.yaml in the current claude-projects workspace. Use when recording a significant event (decision, plan, started, done, blocker, supersession, research, pr) explicitly, or when the user invokes /journal directly.
+description: Append one typed entry to journal.yaml in a claude-projects workspace. Use when recording a significant project event — a decision, plan, task started/done, blocker, supersession, research, pr, or gate run.
 origin: claude-projects
 ---
 

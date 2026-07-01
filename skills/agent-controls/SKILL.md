@@ -1,6 +1,6 @@
 ---
 name: agent-controls
-description: The standard for designing human-agent systems under control — permissions (tool boundaries), verification, approval gates, audit trails, secret handling, recovery, and clear ownership, expressed as a per-agent operating contract. Applies inward now (governs this workspace's own pipeline agents; validated by test-proj.sh). Use to audit an agent definition, design an agent that touches money/prod/security, or when the user mentions agent permissions, operating contracts, or production-readiness for agents.
+description: The standard for human-agent systems under control, expressed as a per-agent operating contract (permitted evidence, tool scope, approval, verification, audit, recovery, ownership). Governs this workspace's own pipeline agents now (checked by test-proj.sh). Use to audit an agent definition or design one that touches money/prod/security.
 origin: claude-projects
 ---
 

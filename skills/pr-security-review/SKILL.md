@@ -1,6 +1,6 @@
 ---
 name: pr-security-review
-description: Run an independent security review on a PR's diff before it opens, then gate the PR on the verdict. Use when about to open a PR, or when the PR gate blocks gh pr create. Spawns a fresh security-reviewer (no implementation context) on the diff, records one SHA-keyed verdict, and folds findings into the PR body. Acceptance is validated earlier, by /next's post-build gate — this gate is security-only.
+description: Independent security review that gates gh pr create — a fresh security-reviewer (no implementation context) reviews the diff, records a SHA-keyed verdict, and folds findings into the PR body. Use when about to open a PR, or when the PR gate blocks gh pr create.
 origin: claude-projects
 agents:
   - security-reviewer
