@@ -170,7 +170,7 @@ Two independent reviews guard each slice — both by a fresh agent that never sa
 
 ### Acceptance — the post-build gate (`/next`)
 
-When `/next` builds a task, the moment the `tdd-implementer` returns a `COMPLETE` summary and the orchestrator's own review is clean, `/next` **commits the slice** and spawns the **`implementation-validator`** on a fresh context to check the diff against the task's acceptance criteria (derived from the branch's `project.yaml` task → its PRD/issue) *before* the task is marked done.
+When `/next` builds a task, the moment the `tdd-implementer` returns a `COMPLETE` summary and the orchestrator's own review is clean, `/next` **commits the slice** and spawns the **`implementation-validator`** on a fresh context to check the diff against the task's acceptance criteria (derived from the branch's `project.yaml` task → its PRD/issue) *before* the task is marked done. It also confirms the close-out **refactor pass** (extract duplication, deepen shallow modules) — flagged HIGH/MEDIUM, never a lone block, since refactoring left the red-green loop for close-out.
 
 - A CRITICAL gap (a promised behavior undelivered) **loops the slice straight back to `tdd`**: the task stays `active`, a `blocker` journal entry records the gaps, and the `tdd-implementer` is re-spawned with the findings to close them. Each fix is a new commit → the validator re-runs on the new `HEAD`. The task never reaches `done` (let alone a PR) until acceptance passes — so "doesn't do what it promised" is caught in seconds, not at PR review.
 - The `implementation-validator` is review-only (no `Write`/`Edit`) and is copied into `.claude/agents/` via the `next` skill's `agents:` frontmatter.
@@ -213,7 +213,7 @@ Security classification is path-based (`classify.sh`): app source → `security-
 
 ## Phase skills
 
-> `/grill-with-docs`, `/to-prd`, `/to-issues`, and `/tdd` are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering).
+> `/grill-with-docs`, `/to-prd`, `/to-issues`, and `/tdd` are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering) (MIT). Several of the design & quality skills below share that origin — see [CREDITS.md](../CREDITS.md) for the full list and license.
 
 ### /grill-with-docs
 
@@ -240,7 +240,7 @@ Use it after `/to-prd` to turn the spec into a concrete backlog.
 
 ### /tdd
 
-Drives implementation using a strict red-green-refactor loop — one test at a time, never horizontal slicing. The **loop never requires interaction**: an AFK task's design was settled upstream (grilling → `to-prd` → `to-issues`), so its acceptance criteria are a complete contract. A **HITL** task is the exception — it was flagged because it needs human input (a decision the upstream phases couldn't settle); that input is gathered *before* the loop, which then runs non-interactively. Two ways it runs, by who invoked it:
+Drives implementation with a red-green loop — one test at a time, never horizontal slicing. Refactoring is **not** part of the loop (it moves to close-out, verified by the acceptance gate). Tests attach only at a **seam** named upstream in `to-prd`/`to-issues`; an unnamed or newly-needed seam is surfaced (inline) or returned `BLOCKED` (subagent), never silently invented. Its design vocabulary — deep modules, seams — comes from the `codebase-design` skill. The **loop never requires interaction**: an AFK task's design was settled upstream (grilling → `to-prd` → `to-issues`), so its acceptance criteria are a complete contract. A **HITL** task is the exception — it was flagged because it needs human input (a decision the upstream phases couldn't settle); that input is gathered *before* the loop, which then runs non-interactively. Two ways it runs, by who invoked it:
 
 - **Hand-invoked → main-agent mode.** You run `/tdd` directly and the main agent (Opus) runs the loop **inline** — the path for an ad-hoc request where you want the main model doing the implementation itself, with you watching. It derives the plan from the acceptance criteria (or the request) and runs; no planning gate. The user is in-session, so for a HITL task (or a genuine question) it just asks, then continues.
 - **`/next` build → subagent mode.** For a HITL task, `/next` first gathers the human input the task needs (it can talk to the user; the sub-agent can't). Then it flips the task `todo → active`, sets up the worktree, and spawns the Sonnet **`tdd-implementer`** sub-agent on a fresh context with the criteria (plus any gathered HITL input). The sub-agent derives the plan, runs the loop, and returns a `COMPLETE | PARTIAL | BLOCKED` summary; `/next` reviews it (re-running tests, checking the tests are behavioral), then runs the **post-build acceptance gate** — it commits the slice and spawns a fresh `implementation-validator` against the acceptance criteria, looping back to the sub-agent on a CRITICAL gap, and only flipping `active → done` once acceptance passes (then proceeding to the security PR gate). A fork that surfaces mid-build comes back as `BLOCKED` (reactive, not a routine gate). This path keeps the orchestrator lean and the implementation tokens on Sonnet.
@@ -251,6 +251,30 @@ Use it when starting implementation of any issue produced by `/to-issues`.
 
 A read-only codebase mapper: traces execution paths, maps architecture layers, and surfaces dependencies and risks for a subsystem, then writes the findings to `docs/research/`. It is **optional** — `grill-with-docs` already explores during grilling, so reach for this only when a question needs more depth than the interview should carry. `/next` may offer it mid-grill when a deep unknown surfaces, but never forces it.
 
+## Design & quality skills (hand-invoked)
+
+These are adapted from upstream too, but sit outside the linear `/next` flow — reach for them directly when the situation calls for it. Only `codebase-design` is auto-wired (as a `/next` companion of `tdd`).
+
+### /codebase-design
+
+The single home for the scaffold's design vocabulary — **Module, Interface, Implementation, Depth, Seam, Adapter, Leverage, Locality** — with the substitutions to avoid ("component", "service", "API", "boundary"). Carries the core principles (depth is a property of the interface, not the implementation; the deletion test; "the interface is the test surface"), an `INTERFACE-DESIGN.md` guide, a `DEEPENING.md` deep-dive that maps dependency categories to test strategy, and `DESIGN-IT-TWICE.md` (spawn parallel sub-agents under different design constraints, then compare on depth/locality/seam). `tdd`, `code-review`, and `improve-codebase-architecture` reference it rather than redefining terms.
+
+### /code-review
+
+Reviews the diff between `HEAD` and a fixed point across two independent axes, each in its own fresh sub-agent so their contexts don't cross-pollute: **Standards** (this repo's conventions from `CONTEXT.md`/`docs/adr/`, plus a built-in code-smell baseline that applies even when the repo documents nothing) and **Spec** (does the change match its originating PRD/issue). Findings report under separate headings and are never re-ranked across axes. It covers correctness and conventions only — security stays with `/pr-security-review` — and is not auto-wired into `/next`.
+
+### /diagnosing-bugs
+
+A six-phase discipline for hard bugs and perf regressions. Phase one *is* the skill: build a tight, red-capable, deterministic, agent-runnable feedback loop before hypothesising — no red-capable command, no phase two. Then reproduce and minimise, generate 3–5 ranked falsifiable hypotheses (shown before testing), instrument one variable at a time with greppable `[DEBUG-…]` tags, add a regression test at a correct seam *before* the fix (an absent seam is itself a finding), and finish with cleanup + a post-mortem that hands architectural findings to `improve-codebase-architecture`. Ships `scripts/hitl-loop.template.sh`, a bash harness that walks a human through manual repro steps and returns parseable `KEY=VALUE` output.
+
+### /prototype
+
+Build **throwaway** code to answer a design question before committing to a build — clearly marked, one command to run, no persistence, no tests. `LOGIC.md` covers a portable pure module (reducer/state machine) behind a disposable clear-screen TUI; `UI.md` covers 3+ structurally-different variants on one `?variant=` route with a production-hidden switcher. When the question is answered the code is deleted or absorbed, and the decision is captured as an ADR or folded into the PRD via `to-prd`.
+
+### /improve-codebase-architecture
+
+Scans the codebase for **deepening opportunities** (shallow modules that could become deep) using an `Explore` sub-agent and the deletion test, then renders a self-contained HTML report to `$TMPDIR` (never the repo) — one card per candidate with before/after diagrams and a Strong / Worth-exploring / Speculative badge. You pick one, it grills the design with you, updates `CONTEXT.md` inline, and offers an ADR. Uses the `codebase-design` vocabulary and reads `CONTEXT.md`/`docs/adr/`. It was moved out of the global `~/.claude` skills into the scaffold, since it depends on those workspace artifacts.
+
 ## Typical workflow
 
 These skills compose into a repeatable process from idea to shipped code — and **`/next` routes you through it**, so the steps below are what happens phase by phase, not a sequence you drive by hand. Throughout, the `repo` skill keeps each task isolated in its own worktree (stacking dependent slices when needed), and two independent agents vet the work — an `implementation-validator` checks acceptance right after the build (looping back to `tdd` on a gap), and a `security-reviewer` checks security before any PR opens.
@@ -258,7 +282,7 @@ These skills compose into a repeatable process from idea to shipped code — and
 1. **Explore the idea — `/grill-with-docs`** — Claude interviews you until every major design branch is resolved, sharpening `CONTEXT.md` and recording hard-to-reverse decisions as ADRs.
 2. **Write the spec — `/to-prd`** — Claude synthesizes the conversation into a full PRD and publishes it to Jira (or `docs/plans/`). No additional input needed.
 3. **Break it into issues — `/to-issues`** — decompose the PRD into vertical slices. Review granularity, HITL/AFK calls, and dependency order, then approve.
-4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). `/next` builds the task by spawning a Sonnet `tdd-implementer` sub-agent that derives the plan from the acceptance criteria and writes one failing test → minimal code → refactor, returning a summary the orchestrator reviews — for a HITL task `/next` gathers the human input it needs first, then the loop runs non-interactively. (Hand-invoke `/tdd` instead when you want Opus to build inline for an ad-hoc request — same loop, in the main agent.) Right after the build, the **post-build acceptance gate** validates the slice against its criteria and loops it back into the build on a critical gap — so the task only reaches `done` once it delivers what it promised. `gh pr create` then triggers the security review.
+4. **Implement each issue — `/tdd`** — work in a dedicated worktree (`repo.sh worktree <task> <repo>`). `/next` builds the task by spawning a Sonnet `tdd-implementer` sub-agent that derives the plan from the acceptance criteria and writes one failing test → minimal code (refactoring happens at close-out), returning a summary the orchestrator reviews — for a HITL task `/next` gathers the human input it needs first, then the loop runs non-interactively. (Hand-invoke `/tdd` instead when you want Opus to build inline for an ad-hoc request — same loop, in the main agent.) Right after the build, the **post-build acceptance gate** validates the slice against its criteria and loops it back into the build on a critical gap — so the task only reaches `done` once it delivers what it promised. `gh pr create` then triggers the security review.
 5. **Log events as they happen — `/journal`** — significant events get logged immediately. The `PostToolUse` hook catches most file-write events automatically.
 6. **Sync the status view — `/sync-status`** — at session end, `STATUS.md` regenerates from current state. The `Stop` hook fires automatically when `journal.yaml` is newer than `STATUS.md`.
 7. **Resume the next session** — Claude reads `STATUS.md` first — a ~500-token synthesis of where the project is, what's active, blocked, and next. No re-orientation cost.
