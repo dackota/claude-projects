@@ -30,6 +30,16 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 - Prefer many thin slices over few thick ones
 </vertical-slice-rules>
 
+**Observability (service projects only).** If `project.yaml` has
+`observability.enabled: true`, then for any slice that adds a **request-serving
+path** (HTTP/gRPC handler, message consumer, background/cron job), fold the
+observability baseline into that slice's **acceptance criteria** — read
+`.claude/skills/observability/standard.md` and add concrete criteria: RED metrics
+(rate/errors/duration) on the new path, structured JSON logs with `trace_id`/`span_id`,
+and spans around downstream calls. This is what makes observability designed-in: the
+build satisfies it and the post-build gate verifies it. Slices with no request path
+(and all slices when the flag is off) get no observability criteria.
+
 ### 4. Quiz the user
 
 Present the proposed breakdown as a numbered list. For each slice, show:

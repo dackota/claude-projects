@@ -113,7 +113,7 @@ proj spike --skills tdd,grill-with-docs                 # bundle a subset
 ├── project.yaml       # source of truth: repos, tasks, Jira key
 ├── .claude/
 │   ├── skills/        # bundled skills (default; --no-skills to opt out)
-│   ├── agents/        # bundled agents (security-reviewer, implementation-validator, tdd-implementer)
+│   ├── agents/        # bundled agents (security-reviewer, implementation-validator, tdd-implementer, otel-observability-engineer)
 │   └── settings.json  # auto-wired hooks (journal, sync-status, repo, pr-security-review)
 ├── docs/              # plans/, adr/, research/, validations/
 ├── scripts/           # repo.sh (when the repo skill is bundled) + one-off scripts
@@ -134,6 +134,7 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/tdd` | Red-green-refactor, one test at a time; the build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent, then runs the post-build acceptance gate |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent security review before `gh pr create` (acceptance is validated earlier, by `/next`'s post-build gate) |
+| `/observability` | Shift-left observability for **service** projects — RED metrics, structured JSON logs, OTel. Dormant unless `project.yaml` `observability.enabled`; then it enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (parallel to `implementation-validator`) |
 | `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks) |
 | `/sync-status` | Regenerates `STATUS.md` from current state (mostly automatic via hooks) |
 | `/codebase-researcher` | Optional read-only codebase mapper; writes findings to `docs/research/` |

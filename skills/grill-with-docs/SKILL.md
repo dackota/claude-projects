@@ -76,6 +76,18 @@ When a term is resolved, update `CONTEXT.md` right there. Don't batch these up â
 
 `CONTEXT.md` should be totally devoid of implementation details. Do not treat `CONTEXT.md` as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
 
+### Surface observability for services
+
+If the design describes a **runtime service** (something that serves
+HTTP/gRPC/messages or runs as a long-lived process), treat observability as a
+first-class branch of the interview: what are the critical paths, what SLOs matter,
+which signals prove the feature works? When the user confirms it ships a service,
+set the `observability` block in `project.yaml` (`enabled: true`, and the
+`otlp_endpoint`/`service_name` if known â€” leave blank otherwise). That flag is what
+turns on the observability standard for `to-issues`, `tdd`, and the `/next` gate; a
+non-service design (CLI, IaC, docs, library) leaves it `false`. See
+`.claude/skills/observability/standard.md` for the bar this commits the project to.
+
 ### Offer ADRs sparingly
 
 Only offer to create an ADR when all three are true:

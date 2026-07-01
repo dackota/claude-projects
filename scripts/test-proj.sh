@@ -55,6 +55,8 @@ assert "project.yaml has correct name"        "$(grep -q "name: ${PROJECT_NAME}"
 assert "project.yaml has jira_key TEST"       "$(grep -q 'jira_key: "TEST"' "$TARGET/project.yaml" && echo true || echo false)"
 assert "project.yaml has repos list"          "$(grep -q 'repos: \[\]' "$TARGET/project.yaml" && echo true || echo false)"
 assert "project.yaml has tasks list"          "$(grep -q 'tasks: \[\]' "$TARGET/project.yaml" && echo true || echo false)"
+assert "project.yaml has observability block" "$(grep -q '^observability:' "$TARGET/project.yaml" && echo true || echo false)"
+assert "project.yaml observability disabled"  "$(grep -q 'enabled: false' "$TARGET/project.yaml" && echo true || echo false)"
 assert ".gitignore excludes repos/"           "$(grep -q 'repos/' "$TARGET/.gitignore" && echo true || echo false)"
 assert ".gitignore excludes worktrees/"       "$(grep -q 'worktrees/' "$TARGET/.gitignore" && echo true || echo false)"
 assert "PROJECT.md has frontmatter title"     "$(grep -q "title: ${PROJECT_NAME}" "$TARGET/PROJECT.md" && echo true || echo false)"
@@ -69,6 +71,9 @@ assert "journal.yaml exists"                  "$([[ -f $TARGET/journal.yaml ]] &
 assert "journal.yaml is an empty YAML list"   "$(grep -qx '\[\]' "$TARGET/journal.yaml" && echo true || echo false)"
 assert "default: skills bundled (repo)"       "$([[ -d $TARGET/.claude/skills/repo ]] && echo true || echo false)"
 assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.json ]] && echo true || echo false)"
+assert "default: observability skill bundled" "$([[ -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
+assert "default: observability standard.md"   "$([[ -f $TARGET/.claude/skills/observability/standard.md ]] && echo true || echo false)"
+assert "default: otel agent auto-installed"   "$([[ -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
 
 # ── dry-run creates nothing ───────────────────────────────────────────────────
 DRY_TARGET="${TMPDIR_BASE}/dry-run-test"
@@ -89,6 +94,8 @@ NS="${TMPDIR_BASE}/no-skills-test"
 bash "$PROJ" "no-skills-test" --dir "$TMPDIR_BASE" --no-skills >/dev/null 2>&1
 assert "--no-skills: workspace still created"  "$([[ -f $NS/CLAUDE.md ]] && echo true || echo false)"
 assert "--no-skills: skills not installed"     "$([[ ! -d $NS/.claude/skills/repo ]] && echo true || echo false)"
+assert "--no-skills: no observability skill"   "$([[ ! -d $NS/.claude/skills/observability ]] && echo true || echo false)"
+assert "--no-skills: no otel agent"            "$([[ ! -f $NS/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
 
 # ── repo skill: install + hook wiring ─────────────────────────────────────────
 RT="${TMPDIR_BASE}/repo-test"
@@ -351,6 +358,17 @@ assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAU
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"
 assert "next: does NOT pull unrelated repo"         "$([[ ! -d $NT/.claude/skills/repo ]] && echo true || echo false)"
+# observability is NOT a companion of next — it is service-scoped, not part of the flow.
+assert "next: does NOT pull observability"          "$([[ ! -d $NT/.claude/skills/observability ]] && echo true || echo false)"
+
+# ── observability skill: install + agent wiring ───────────────────────────────
+OT="${TMPDIR_BASE}/obs-test"
+bash "$PROJ" "obs-test" --dir "$TMPDIR_BASE" --skills observability >/dev/null
+assert "obs: skill dir copied"                      "$([[ -d $OT/.claude/skills/observability ]] && echo true || echo false)"
+assert "obs: standard.md present"                   "$([[ -f $OT/.claude/skills/observability/standard.md ]] && echo true || echo false)"
+assert "obs: otel agent wired from frontmatter"     "$([[ -f $OT/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "obs: standard defines RED baseline"         "$(grep -q 'RED is the floor' "$OT/.claude/skills/observability/standard.md" && echo true || echo false)"
+assert "obs: subset does NOT pull unrelated tdd"    "$([[ ! -d $OT/.claude/skills/tdd ]] && echo true || echo false)"
 
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""

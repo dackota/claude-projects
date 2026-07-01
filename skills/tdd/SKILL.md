@@ -125,6 +125,10 @@ Rules:
 - Only enough code to pass the current test
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
+- If a criterion calls for observability (RED metrics, structured JSON logs with
+  trace correlation, spans), build that instrumentation and its tests in the same
+  loop, to `.claude/skills/observability/standard.md` — a request path arrives
+  observable, not instrumented later. Dormant when no such criterion is present.
 
 ### 4. Refactor
 

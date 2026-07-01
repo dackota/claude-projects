@@ -51,6 +51,13 @@ features for future slices), not less.
   (`.claude/skills/tdd/mocking.md`).
 - **Minimal code to pass the current test.** Don't anticipate future tests.
 - **Never refactor while RED.** Get to GREEN first, then refactor.
+- **Observability is part of the slice, not a later pass.** If an acceptance
+  criterion calls for observability (RED metrics, structured JSON logs with trace
+  correlation, spans on downstream calls), read
+  `.claude/skills/observability/standard.md` and build that instrumentation **and
+  its tests** in the same red-green loop as the feature — a request path arrives
+  observable. (No such criterion → nothing to add; this is dormant for non-service
+  slices.)
 - Prefer **deep modules** — small interface, substantial implementation behind it
   (`.claude/skills/tdd/deep-modules.md`, `.claude/skills/tdd/interface-design.md`).
 

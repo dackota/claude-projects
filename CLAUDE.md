@@ -30,6 +30,7 @@ Bundled skills:
 | `security-review` | App-code security checklist (OWASP, secrets, authn/z, injection) |
 | `cloud-infra-security` | Cloud/IaC security checklist (IAM, network, CI/CD, secrets) |
 | `pr-security-review` | Gates `gh pr create` behind an independent `security-reviewer` agent |
+| `observability` | Shift-left observability for service projects — canonical `standard.md` (RED metrics, structured JSON logs, OTel); dormant unless `project.yaml` `observability.enabled`; wires acceptance criteria into `to-issues`, builds instrumented in `tdd`, and gates the build via the `otel-observability-engineer` agent (parallel to `implementation-validator`, BLOCKER loops back to tdd) |
 
 ## Working on this repo
 
