@@ -166,7 +166,9 @@ disposable. For each build:
    on a **fresh context** to verify the slice against its contract *before* it is
    marked done. Give it only the diff range (`<base>...HEAD`) + changed files and
    the task's acceptance criteria / "what to build" — **not** the implementation
-   rationale; independence is the point. It returns `VERDICT: PASS | BLOCK`
+   rationale; independence is the point. Pass the diff **range**, not pasted file
+   contents — the agent fetches the diff itself with `git`, which keeps secrets out
+   of its prompt (an `agent-controls` control). It returns `VERDICT: PASS | BLOCK`
    (`BLOCK` iff `CRITICAL > 0`).
 
    **Observability gate (service tasks only — run in parallel).** If `project.yaml`
@@ -177,6 +179,15 @@ disposable. For each build:
    `VERDICT: PASS | BLOCK` (`BLOCK` iff `BLOCKER > 0`) against
    `.claude/skills/observability/standard.md`. Skip it silently when the flag is
    off, the agent isn't installed, or the diff adds no request path.
+
+   **Record each gate run (the Audit step).** After a gate agent returns — PASS or
+   BLOCK — append a `run` journal entry (`type: run`) with its `agent`, `task`,
+   `verdict`, the `critical`/`high` counts it reported (the BLOCKER count for the
+   observability gate), the task's `rework` count so far (how many times it has
+   looped back through this gate), and `approver` (null unless a named human
+   approved a gated action). The `run-check.sh` hook nudges you when a review agent
+   finishes; these entries feed `STATUS.md`'s **Pipeline health**. The security gate
+   at `gh pr create` records its own `run` entry the same way.
 
    Treat the two gates as one barrier — the slice advances only if **both** PASS:
    - **Both PASS** → flip the task `active → done` and proceed to **Land** (the PR's
@@ -226,8 +237,9 @@ blocker to land).
    re-run its tests → commit its slice → run the post-build gate(s) on its diff —
    `implementation-validator`, plus `otel-observability-engineer` in parallel for a
    service task that added a request path — → `active → done` only if all PASS, or
-   loop that one task back to `tdd` on a CRITICAL/BLOCKER gap. One task looping back
-   never holds up the others.
+   loop that one task back to `tdd` on a CRITICAL/BLOCKER gap (record a `run` entry
+   per gate, as in the single-build gate). One task looping back never holds up the
+   others.
 5. **Keep batches modest** (a few at a time) so reviews and acceptance gates stay
    tractable; a large frontier builds in waves.
 

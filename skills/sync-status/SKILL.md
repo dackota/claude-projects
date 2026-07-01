@@ -21,7 +21,8 @@ The conjunction is deliberate — do not sync after every individual doc edit, a
 
 1. `PROJECT.md` — one-sentence goal extracted from the Goals section.
 2. `project.yaml` — repo list, Jira key, and `tasks` (status `active` → "Active work", `blocked` → "Blocked / open questions").
-3. `journal.yaml` — all entries, most recent first for "Recent decisions".
+3. `journal.yaml` — all entries, most recent first for "Recent decisions"; the
+   `type: run` entries feed the "Pipeline health" rollup.
 4. Frontmatter of every doc in `docs/plans/`, `docs/research/`, and `docs/validations/` — to identify `status: active` docs. `docs/adr/` and `CONTEXT.md` are NOT scanned here; decisions surface via the journal.
 5. Full body of every `status: active` doc — to synthesize current state and extract blockers/next moves.
 
@@ -60,12 +61,23 @@ last_synced: <ISO-8601 timestamp>
 - <load-bearing constraint or invariant learned through the project>
 - ...
 
+## Pipeline health
+- Runs: <total> gate runs — block rate <pct>% (<blocks>/<total>)
+- Rework: <avg> loop-backs per task; <n> task(s) looped back
+- By gate: acceptance <blocks>/<runs>, security <blocks>/<runs>, observability <blocks>/<runs>
+- <task-id> reworked <k>× — <the gate that keeps blocking it>
+
 ## Next moves
 - <actionable next step>
 - ...
 ```
 
 Target size: ~350–500 tokens. Dense and link-heavy. Every active work item and next move should link to its plan or decision doc.
+
+**Pipeline health** is the loop's "Learn" surface — a rollup of `journal.yaml`
+`type: run` entries (block rate, rework rate, which gate blocks most, which tasks
+rework most). Omit the whole section when there are no `run` entries yet; when there
+are, keep it to a few rolled-up lines — never list every run.
 
 ## Bootstrap behavior
 
