@@ -33,21 +33,30 @@ cwd="${cwd:-$PWD}"
 # This hook fires BEFORE the command runs, so the payload's cwd is the session's
 # working directory as it was *before* the command — stale for the common
 # `cd <worktree> && gh pr create …` idiom (parallel work across worktrees drifts
-# that one shared cwd). Honor a leading cd, but ONLY in the exact, unambiguous
-# shape `cd <dir> && gh pr create …`: a single cd immediately followed by the gh
-# command, with nothing else before it. Regex cannot safely emulate shell cwd
-# resolution — a second cd can hide in a subshell `( … )`, brace group `{ …; }`,
-# command substitution `$( … )`, or control flow — so we whitelist that one shape
-# (bare or double-quoted <dir>) and fall back to the payload cwd (fail closed) for
-# anything else, never guessing where gh actually runs.
-_cd="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("[^"]+"|[^[:space:]&;|(){}$]+)[[:space:]]*&&[[:space:]]*gh[[:space:]]+pr[[:space:]]+create([[:space:]].*)?$/\1/p')"
-if [[ -n "$_cd" ]]; then
-  _cd="${_cd#\"}"; _cd="${_cd%\"}"   # strip surrounding double quotes, if present
-  case "$_cd" in
-    /*) cwd="$_cd" ;;
-    *)  cwd="$cwd/$_cd" ;;
-  esac
-fi
+# that one shared cwd). Honor a leading cd, but ONLY for a SINGLE-LINE command of
+# the exact, unambiguous shape `cd <dir> && gh pr create …` (a single cd
+# immediately followed by gh, nothing else before it). Regex cannot safely emulate
+# shell cwd resolution: a second cd can hide in a subshell `( … )`, brace group
+# `{ …; }`, command substitution `$( … )`, control flow, or — since sed anchors per
+# line — on another line of a multi-line command (heredoc body, dead branch). So we
+# reject any embedded newline outright, then whitelist that one single-line shape
+# (bare or double-quoted <dir>); everything else falls back to the payload cwd
+# (fail closed), never guessing where gh actually runs.
+_cmd1="$cmd"
+while [[ "$_cmd1" == *$'\n' ]]; do _cmd1="${_cmd1%$'\n'}"; done  # strip trailing newlines
+case "$_cmd1" in
+  *$'\n'*) : ;;  # embedded newline => multi-line => never trust a parsed cd
+  *)
+    _cd="$(printf '%s' "$_cmd1" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("[^"]+"|[^[:space:]&;|(){}$]+)[[:space:]]*&&[[:space:]]*gh[[:space:]]+pr[[:space:]]+create([[:space:]].*)?$/\1/p')"
+    if [[ -n "$_cd" ]]; then
+      _cd="${_cd#\"}"; _cd="${_cd%\"}"   # strip surrounding double quotes, if present
+      case "$_cd" in
+        /*) cwd="$_cd" ;;
+        *)  cwd="$cwd/$_cd" ;;
+      esac
+    fi
+    ;;
+esac
 gitdir="$(git -C "$cwd" rev-parse --absolute-git-dir 2>/dev/null || true)"
 sha="$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)"
 [[ -z "$gitdir" || -z "$sha" ]] && \

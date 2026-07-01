@@ -229,10 +229,10 @@ files, so the ambient cwd drifts between tasks:
   cwd-safe and self-enforces the recorded review verdict. For a direct
   `gh pr create`, the gate trusts a leading `cd` **only** in the exact shape
   `cd <worktree> && gh pr create …` (one `cd`, immediately before `gh`, nothing
-  else between). Any other shape — a second `cd`, a subshell, `$(…)`, or an
-  intervening command — falls back to the session cwd and **fails closed** (blocks
-  unless that cwd is itself the PR's repo). When juggling several worktrees, use
-  `repo.sh pr`.
+  else between, single-line). Any other shape — a second `cd`, a subshell, `$(…)`,
+  an intervening command, or a multi-line command — falls back to the session cwd
+  and **fails closed** (blocks unless that cwd is itself the PR's repo). When
+  juggling several worktrees, use `repo.sh pr`.
 
 **Stacked work (when the task touches a code repo).** Create the worktree through
 `scripts/repo.sh worktree <task> <repo>` — if the task's blocker is still in
