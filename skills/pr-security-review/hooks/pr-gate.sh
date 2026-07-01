@@ -33,20 +33,16 @@ cwd="${cwd:-$PWD}"
 # This hook fires BEFORE the command runs, so the payload's cwd is the session's
 # working directory as it was *before* the command — stale for the common
 # `cd <worktree> && gh pr create …` idiom (parallel work across worktrees drifts
-# that one shared cwd). If the command begins with `cd <dir> &&` (or `;`), resolve
-# the repo/HEAD from THAT directory, so the gate keys on the repo the PR is
-# actually created in.
-_cd="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+([^&;|]+)[[:space:]]*(&&|;).*/\1/p')"
-# Only trust a SINGLE leading `cd`. With multiple `cd` tokens the effective cwd at
-# `gh pr create` (the *last* cd, or a compounded relative path) can differ from the
-# first — rather than emulate shell cwd semantics, refuse to guess and fall back to
-# the payload cwd (fail closed), so a stale/foreign verdict or a wrong-repo diff
-# classification can never authorize the PR.
-_cdn="$(printf '%s' "$cmd" | grep -oE '(^|&&|[;&|])[[:space:]]*cd[[:space:]]' | wc -l | tr -d ' ')"
-if [[ -n "$_cd" && "${_cdn:-0}" -eq 1 ]]; then
-  _cd="${_cd#"${_cd%%[![:space:]]*}"}"     # strip leading whitespace
-  _cd="${_cd%"${_cd##*[![:space:]]}"}"     # strip trailing whitespace
-  _cd="${_cd#[\"\']}"; _cd="${_cd%[\"\']}" # strip one surrounding quote, if present
+# that one shared cwd). Honor a leading cd, but ONLY in the exact, unambiguous
+# shape `cd <dir> && gh pr create …`: a single cd immediately followed by the gh
+# command, with nothing else before it. Regex cannot safely emulate shell cwd
+# resolution — a second cd can hide in a subshell `( … )`, brace group `{ …; }`,
+# command substitution `$( … )`, or control flow — so we whitelist that one shape
+# (bare or double-quoted <dir>) and fall back to the payload cwd (fail closed) for
+# anything else, never guessing where gh actually runs.
+_cd="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("[^"]+"|[^[:space:]&;|(){}$]+)[[:space:]]*&&[[:space:]]*gh[[:space:]]+pr[[:space:]]+create([[:space:]].*)?$/\1/p')"
+if [[ -n "$_cd" ]]; then
+  _cd="${_cd#\"}"; _cd="${_cd%\"}"   # strip surrounding double quotes, if present
   case "$_cd" in
     /*) cwd="$_cd" ;;
     *)  cwd="$cwd/$_cd" ;;
