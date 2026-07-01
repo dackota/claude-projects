@@ -79,6 +79,19 @@ RIGHT (vertical):
   ...
 ```
 
+## Anti-Pattern: Tautological Tests
+
+A **tautological test** computes its expected value the same way the code under test does, so it asserts the implementation against itself and can never fail for the reason that matters. If the test reuses the production formula, calls the same function to build the expected value, or shares the same constant, it stays green no matter how wrong the behavior is.
+
+```
+WRONG (tautological):
+  expect(discount(order)).toBe(order.total * 0.1)   // mirrors the impl's own formula
+RIGHT (independent):
+  expect(discount({ total: 200 })).toBe(20)         // a hand-computed expected value
+```
+
+Assert against **independently known** expected values — hand-computed, taken from the spec, or a fixed literal. See [tests.md](tests.md).
+
 ## Workflow (main-agent / inline mode)
 
 ### 1. Plan the slice (no gate)
@@ -95,9 +108,17 @@ session with you, so get the decision or answer it flagged now, then proceed.
 
 Derive the plan — don't confirm it:
 
-- [ ] Identify opportunities for [deep modules](deep-modules.md) (small interface, deep implementation)
-- [ ] Design interfaces for [testability](interface-design.md)
+- [ ] Identify opportunities for **deep modules** (small interface, deep implementation) — vocabulary and heuristics in the `codebase-design` skill (`.claude/skills/codebase-design/SKILL.md`)
+- [ ] Design interfaces for **testability** (`.claude/skills/codebase-design/INTERFACE-DESIGN.md`)
 - [ ] List the prioritized **behaviors to test** (not implementation steps) — critical paths and complex logic first; you can't test everything
+
+**Seams gate.** Test only at a seam the acceptance criteria name — `to-prd` sketched
+the seams (highest seam, ideal number is one) and `to-issues` recorded them per slice.
+Do not invent a seam mid-build. If the criteria name no seam, or building reveals the
+promised behavior can only be reached through a seam the criteria didn't name, that's a
+design fork the criteria didn't settle: in inline mode surface it and get agreement; in
+subagent mode return `BLOCKED` with the seam question. **No test is written at an
+unconfirmed seam.**
 
 ### 2. Tracer bullet
 
@@ -131,9 +152,14 @@ Rules:
   logs, spans), build it and its tests in the same loop, to the Service standard in
   `.claude/skills/observability/standard.md`.
 
-### 4. Refactor
+### 4. Close out
 
-After all tests pass, look for [refactor candidates](refactoring.md):
+The red-green loop is done when the task's behaviors are all GREEN. **Refactoring is
+not part of the loop** — it happens here at close-out, once nothing is RED.
+
+**Refactor pass.** With everything GREEN, look for refactor candidates — deepen
+shallow modules (`.claude/skills/codebase-design/DEEPENING.md`); the fuller
+standards/spec pass is the `code-review` skill — before declaring the slice done:
 
 - [ ] Extract duplication
 - [ ] Deepen modules (move complexity behind simple interfaces)
@@ -141,22 +167,23 @@ After all tests pass, look for [refactor candidates](refactoring.md):
 - [ ] Consider what the new code reveals about existing code
 - [ ] Run tests after each refactor step
 
-**Never refactor while RED.** Get to GREEN first.
+Never restructure while RED — get to GREEN first. In **subagent mode** this pass is
+enforced independently: the post-build `implementation-validator` gate checks it, so a
+slice that skipped a needed refactor can loop back. In **inline mode** it's your own
+close-out check.
 
-### 5. Close out
-
-When the task's behaviors are all GREEN and refactored:
+Then:
 
 - Flip the `project.yaml` task `status` to `done` — the journal's `done` signal (skip for an ad-hoc request with no task).
 - For a meaningful plan or milestone (not every task), write a validation doc to `docs/validations/` with the evidence (commands run, `path:line`, test output) and reference it from the `done` journal entry.
 
 In subagent mode (`/next`), an **independent acceptance check** runs immediately
 after this loop — `/next` commits the slice and spawns a fresh
-`implementation-validator` against the acceptance criteria before the task is
-marked done; a `BLOCK` loops straight back here. In inline mode there is no
-auto-gate (you're watching live) — close-out here is your own confidence that the
-slice is done; run `/pr-security-review` by hand if you want an independent pass.
-Either way, security is reviewed later at the PR gate.
+`implementation-validator` against the acceptance criteria (including the refactor
+pass above) before the task is marked done; a `BLOCK` loops straight back here. In
+inline mode there is no auto-gate (you're watching live) — close-out here is your own
+confidence that the slice is done; run `/pr-security-review` by hand if you want an
+independent pass. Either way, security is reviewed later at the PR gate.
 
 ## Checklist Per Cycle
 

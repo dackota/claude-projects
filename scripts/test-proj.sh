@@ -74,6 +74,12 @@ assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.
 assert "default: observability skill bundled" "$([[ -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
 assert "default: observability standard.md"   "$([[ -f $TARGET/.claude/skills/observability/standard.md ]] && echo true || echo false)"
 assert "default: otel agent auto-installed"   "$([[ -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "default: codebase-design bundled"     "$([[ -d $TARGET/.claude/skills/codebase-design ]] && echo true || echo false)"
+assert "default: code-review bundled"         "$([[ -d $TARGET/.claude/skills/code-review ]] && echo true || echo false)"
+assert "default: diagnosing-bugs bundled"     "$([[ -d $TARGET/.claude/skills/diagnosing-bugs ]] && echo true || echo false)"
+assert "default: diagnosing-bugs hitl tmpl"   "$([[ -f $TARGET/.claude/skills/diagnosing-bugs/scripts/hitl-loop.template.sh ]] && echo true || echo false)"
+assert "default: prototype bundled"           "$([[ -d $TARGET/.claude/skills/prototype ]] && echo true || echo false)"
+assert "default: improve-codebase-arch bundled" "$([[ -d $TARGET/.claude/skills/improve-codebase-architecture ]] && echo true || echo false)"
 assert "default: tdd baseline is unconditional" "$(grep -q 'Observable by default (baseline' "$TARGET/.claude/agents/tdd-implementer.md" && echo true || echo false)"
 
 # ── dry-run creates nothing ───────────────────────────────────────────────────
@@ -353,6 +359,7 @@ assert "next: companion grill-with-docs pulled"     "$([[ -d $NT/.claude/skills/
 assert "next: companion to-prd pulled"              "$([[ -d $NT/.claude/skills/to-prd ]] && echo true || echo false)"
 assert "next: companion to-issues pulled"           "$([[ -d $NT/.claude/skills/to-issues ]] && echo true || echo false)"
 assert "next: companion tdd pulled"                 "$([[ -d $NT/.claude/skills/tdd ]] && echo true || echo false)"
+assert "next: companion codebase-design pulled"     "$([[ -d $NT/.claude/skills/codebase-design ]] && echo true || echo false)"
 assert "next: tdd-implementer agent wired"          "$([[ -f $NT/.claude/agents/tdd-implementer.md ]] && echo true || echo false)"
 assert "next: implementation-validator agent wired" "$([[ -f $NT/.claude/agents/implementation-validator.md ]] && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
