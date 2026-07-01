@@ -1,6 +1,6 @@
 ---
 name: observability
-description: The project's observability standard (RED metrics, structured JSON logging, OpenTelemetry) and its post-build gate. Dormant unless project.yaml sets observability.enabled — then planning, building, and the /next gate enforce it for runtime services. Use to audit or plan observability for a service, or when the user mentions RED metrics, OTel, tracing, or structured logging.
+description: The project's observability standard (RED metrics, structured JSON logging, OpenTelemetry) and its post-build gate. Dormant unless project.yaml sets observability.enabled — then planning, building, and the /next gate enforce it for runtime services. Use to audit or plan observability for a service.
 origin: claude-projects
 agents:
   - otel-observability-engineer
