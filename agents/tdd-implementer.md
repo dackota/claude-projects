@@ -71,7 +71,8 @@ features for future slices), not less.
   its tests** in the same red-green loop — a request path arrives observable, not
   instrumented later.
 - Prefer **deep modules** — small interface, substantial implementation behind it
-  (`.claude/skills/tdd/deep-modules.md`, `.claude/skills/tdd/interface-design.md`).
+  (see the `codebase-design` skill: `.claude/skills/codebase-design/SKILL.md` and
+  `.claude/skills/codebase-design/INTERFACE-DESIGN.md`).
 
 ## Workflow
 
@@ -80,10 +81,10 @@ features for future slices), not less.
    proves the path works end-to-end.
 2. **Incremental loop.** For each remaining behavior: write the next test (RED) →
    minimal code (GREEN) → run tests. One test at a time, observable behavior only.
-3. **Refactor.** Once all behaviors are GREEN, look for refactor candidates
-   (`.claude/skills/tdd/refactoring.md`): extract duplication, deepen modules,
-   apply SOLID where natural. Run the full test command after each refactor step;
-   it must stay GREEN.
+3. **Refactor (close-out pass — not part of the red-green loop).** Once all
+   behaviors are GREEN, look for refactor candidates: extract duplication, deepen
+   shallow modules (`.claude/skills/codebase-design/DEEPENING.md`), apply SOLID where
+   natural. Run the full test command after each refactor step; it must stay GREEN.
 4. **Final verification.** Run the full test command once more and capture the
    exact output (pass/fail counts) for your summary.
 

@@ -22,7 +22,9 @@ This skill takes the current conversation context and codebase understanding and
 
 A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
+Then sketch the **seams** at which you'll test — the interfaces where tests attach to exercise behavior. Prefer an existing seam over inventing one, use the **highest seam** that still exercises the behavior (test through the widest public entry point, not the internals beneath it), and keep the count small — the **ideal number is one**. A deep module's interface is a natural seam. These seams are the contract `to-issues` records per slice and `tdd` tests at, so name them precisely.
+
+Check with the user that these modules and seams match their expectations. Check with the user which modules they want tests written for.
 
 3. Write the PRD using the template below, then route it per `project.yaml`:
 
@@ -74,6 +76,7 @@ A list of testing decisions that were made. Include:
 
 - A description of what makes a good test (only test external behavior, not implementation details)
 - Which modules will be tested
+- **The seams tests will attach at** (from step 2 — prefer existing, highest seam, ideal number is one). `to-issues` carries these into each slice's acceptance criteria.
 - Prior art for the tests (i.e. similar types of tests in the codebase)
 
 ## Out of Scope

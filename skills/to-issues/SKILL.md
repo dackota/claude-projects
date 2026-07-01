@@ -28,6 +28,8 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 - Each slice delivers a narrow but COMPLETE path through every layer (schema, API, UI, tests)
 - A completed slice is demoable or verifiable on its own
 - Prefer many thin slices over few thick ones
+- **Prefactor first when the change is hard**: if existing structure makes a slice awkward, split off a behavior-preserving refactor slice ahead of it — *make the change easy, then make the easy change*. The prefactor is its own AFK slice with its own criteria (tests stay green, no behavior change).
+- **Name the seam** each slice's tests attach at (from the PRD's testing decisions). `tdd` tests only at a named seam, so a slice with no named seam can't be built AFK — resolve the seam before publishing, not during the build.
 </vertical-slice-rules>
 
 **Observability (service projects only).** If `project.yaml` has
@@ -81,9 +83,15 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 
 ## Acceptance criteria
 
+State each as a **behavioral** outcome — what the system does, observable through the named seam — not a procedure (steps to take). Behavioral criteria survive refactors and stay checkable by the post-build acceptance gate. Each criterion must be **independently testable**, and the criteria as a whole name the seam they're verified through (from the PRD's testing decisions). Avoid file paths and line numbers — they go stale.
+
 - [ ] Criterion 1
 - [ ] Criterion 2
 - [ ] Criterion 3
+
+## Out of scope
+
+The adjacent behavior a reader might assume this slice covers but it does not. Keeps the slice's boundary explicit for the builder and the acceptance gate.
 
 ## Blocked by
 

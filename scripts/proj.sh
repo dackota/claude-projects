@@ -183,7 +183,7 @@ post_install_skill() {
 # all skills, but an explicit `--skills` subset must name it).
 skill_deps() {
   case "$1" in
-    next) echo "grill-with-docs to-prd to-issues tdd" ;;
+    next) echo "grill-with-docs to-prd to-issues tdd codebase-design" ;;
     *) ;;
   esac
 }

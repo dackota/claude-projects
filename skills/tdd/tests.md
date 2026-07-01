@@ -59,3 +59,22 @@ test("createUser makes user retrievable", async () => {
   expect(retrieved.name).toBe("Alice");
 });
 ```
+
+## Tautological Tests
+
+A tautological test recomputes the expected value the same way the code does, so it asserts the implementation against itself and can never catch a wrong result.
+
+```typescript
+// BAD: expected value mirrors the implementation's own formula
+test("applies 10% discount", () => {
+  const order = { total: 200 };
+  expect(discount(order)).toBe(order.total * 0.1); // same formula the impl uses
+});
+
+// GOOD: expected value is independently known
+test("applies 10% discount", () => {
+  expect(discount({ total: 200 })).toBe(20); // hand-computed, not derived from the impl
+});
+```
+
+The tell: the test still passes if the implementation's formula is wrong, because both sides change together. Assert against a value computed by hand, taken from the spec, or written as a literal.
