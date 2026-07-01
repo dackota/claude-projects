@@ -33,6 +33,7 @@ Optional additional args (add as YAML fields if provided):
 | `supersession` | A doc's status was flipped to superseded |
 | `research` | A research doc was finalized |
 | `pr` | A PR was opened, merged, or closed |
+| `run` | A review/gate agent finished a run — the audit record for a `/next` pipeline gate (see below) |
 
 Rejects unknown types with a clear error listing the valid enum values.
 
@@ -49,6 +50,30 @@ Rejects unknown types with a clear error listing the valid enum values.
 ```
 
 Entries are appended to the end of the list in `journal.yaml`. The file grows chronologically; never reorder or compact it.
+
+## `run` entries — pipeline audit records
+
+A `run` entry is the durable audit trail for one gate run in the `/next` pipeline
+(the loop's "Audit" step). Alongside the common fields it carries structured fields
+the `/sync-status` **Pipeline health** surface rolls up:
+
+```yaml
+- date: YYYY-MM-DD
+  type: run
+  agent: implementation-validator   # which review/gate agent ran
+  task: add-login-endpoint          # the task id under review
+  verdict: PASS | BLOCK
+  critical: 0                       # counts as the agent reported them (BLOCKER count for otel)
+  high: 0
+  rework: 2                         # times this task looped back through this gate so far
+  approver: null                    # named human who approved a gated action, else null
+  summary: implementation-validator BLOCK (1 CRITICAL) on add-login-endpoint
+  refs: [add-login-endpoint]
+```
+
+`/next` appends one complete `run` entry after each gate returns — it never edits a
+prior entry (append-only holds). A `PostToolUse` hook (`run-check.sh`) nudges when a
+review agent finishes, so the record isn't forgotten.
 
 ## Safety checks
 

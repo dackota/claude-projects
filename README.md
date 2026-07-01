@@ -135,7 +135,8 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent security review before `gh pr create` (acceptance is validated earlier, by `/next`'s post-build gate) |
 | `/observability` | Shift-left observability. A **baseline** (structured logs, correct levels, no swallowed errors) applies to every build; a flag-gated **service standard** (RED metrics, OTel, tracing) enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (parallel to `implementation-validator`) |
-| `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks) |
+| `/agent-controls` | The standard for human-agent systems under control — permissions, verification, approval, audit, secret handling, recovery, ownership — as a per-agent **operating contract**. Applied inward now: every bundled agent carries a `contract:` block (`test-proj.sh` checks it); the deliverable-facing gated layer is documented for when a project ships its own agent system |
+| `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks); the `run` type records each gate run as the pipeline audit trail |
 | `/sync-status` | Regenerates `STATUS.md` from current state (mostly automatic via hooks) |
 | `/codebase-researcher` | Optional read-only codebase mapper; writes findings to `docs/research/` |
 

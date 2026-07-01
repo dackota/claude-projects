@@ -102,6 +102,8 @@ wire_skill_hooks() {
     journal)
       add_hook "$settings" PostToolUse "Write|Edit" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-check.sh' true "Journal entry may be needed"
       add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-stop.sh' true "Unlogged journal events detected"
+      # After a review/gate sub-agent (Task) finishes, nudge a `run` audit entry.
+      add_hook "$settings" PostToolUse "Task" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/run-check.sh' true "Gate run needs a journal entry"
       ;;
     sync-status)
       # Synchronous (no asyncRewake): block once at the real stop when STATUS.md
@@ -269,6 +271,10 @@ conversation, run at different moments:
   over ~25 lines; small code-only and docs-only diffs skip. `--web`/GitHub UI
   bypass the gate.
 
+Each review agent carries a declared **operating contract** (permitted evidence,
+tool scope, approval rule, required check, fallback) and records a `run` journal
+entry per gate — the `agent-controls` skill is the standard.
+
 ## Documentation rules
 
 All artifacts are Markdown with dash-separated file names. Every doc in
@@ -310,7 +316,7 @@ Append-only; never edit existing entries. Manual escape hatch:
 
 ```yaml
 - date: YYYY-MM-DD
-  type: decision   # decision | plan | started | done | blocker | supersession | research | pr
+  type: decision   # decision | plan | started | done | blocker | supersession | research | pr | run
   summary: <one or two sentences>
   refs: []         # optional paths or external IDs
   jira: DEVOPS-1525  # optional
@@ -320,7 +326,8 @@ Append immediately when: a decision is made/reversed (`decision` — link the AD
 if one was written) · a plan is finalized/revised (`plan`) · a task status flips
 (`started`/`done`) · a blocker is hit (`blocker`) · a doc is superseded
 (`supersession`) · research is finalized (`research`) · a PR is opened/merged/
-closed (`pr`).
+closed (`pr`) · a `/next` gate finishes (`run` — the pipeline audit trail; the
+`run-check.sh` hook nudges you).
 
 ## /sync-status
 
@@ -329,7 +336,8 @@ Regenerates `STATUS.md` wholesale from `PROJECT.md`, `project.yaml`,
 automatically) when **both** hold: (1) a significant change occurred (plan
 finalized, decision committed, task status flipped, meaningful blocker); and
 (2) a natural pause has arrived (handing back, finishing a work block). Not after
-every doc edit.
+every doc edit. Its **Pipeline health** section rolls up `run` entries (gate
+block/rework rates) — the loop's "Learn" surface.
 
 ## Issue tracker & tasks
 

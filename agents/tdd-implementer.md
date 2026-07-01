@@ -3,6 +3,14 @@ name: tdd-implementer
 description: Implements ONE build task via the red-green-refactor loop. Spawned by /next on a fresh context to complete a slice autonomously (the subagent path; hand-invoked /tdd runs inline in the main agent instead) — given the task's acceptance criteria, plus any human input /next gathered for a HITL task, it derives the plan (public interface + prioritized behaviors), writes tests and minimal code one behavior at a time, then returns a structured summary. It cannot interact with the user, flip task status, or open PRs — the orchestrator owns the lifecycle.
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 model: sonnet
+contract:
+  actor: tdd-implementer
+  permitted-evidence: ["acceptance criteria", "CONTEXT.md vocabulary", "relevant ADRs", "the working directory (its worktree)", "test command", "HITL input the orchestrator gathered"]
+  blocked-actions: ["interact with the user", "flip task status", "commit", "open PRs", "deploy", "work outside its worktree"]
+  tool-scope: write              # read-only | write | deploy
+  approval-rule: "the orchestrator commits the slice; the acceptance + observability gates must PASS before done"
+  required-check: "all behaviors GREEN via red-green-refactor; returns COMPLETE | PARTIAL | BLOCKED"
+  fallback: "return BLOCKED on a genuine fork; never fake GREEN or claim done"
 ---
 
 # TDD Implementer

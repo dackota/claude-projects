@@ -31,6 +31,7 @@ Bundled skills:
 | `cloud-infra-security` | Cloud/IaC security checklist (IAM, network, CI/CD, secrets) |
 | `pr-security-review` | Gates `gh pr create` behind an independent `security-reviewer` agent |
 | `observability` | Shift-left observability. Canonical `standard.md` has two layers: a **baseline** (structured logs, correct levels, no swallowed errors) that `tdd` applies to every build regardless of flag; and a **service standard** (RED metrics, OTel, tracing) gated by `project.yaml` `observability.enabled` — wired into `to-issues` acceptance criteria, built in `tdd`, and gated via the `otel-observability-engineer` agent (parallel to `implementation-validator`, BLOCKER loops back to tdd) |
+| `agent-controls` | The standard for human-agent systems under control (permissions/tool boundaries, verification, approval, audit, secret handling, recovery, ownership) as a per-agent **operating contract**. Canonical `standard.md` (parallel to `observability`). Applied **inward now**: every `agents/*.md` carries a `contract:` block, validated by `test-proj.sh` (seven keys; read-only agents hold no Write/Edit). The gated **deliverable-facing** layer (for projects that ship agent systems) is documented but not wired — build it when a project needs it. Pairs with the journal `run` entry type + `run-check.sh` hook (audit trail) and `sync-status` **Pipeline health** (Learn) |
 
 ## Working on this repo
 

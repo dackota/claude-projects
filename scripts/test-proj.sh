@@ -373,6 +373,35 @@ assert "obs: standard has universal Baseline layer"  "$(grep -q '## Baseline' "$
 assert "obs: standard has Service standard layer"    "$(grep -q '## Service standard' "$OT/.claude/skills/observability/standard.md" && echo true || echo false)"
 assert "obs: subset does NOT pull unrelated tdd"    "$([[ ! -d $OT/.claude/skills/tdd ]] && echo true || echo false)"
 
+# ── agent-controls: skill bundling + operating contracts on every agent ───────
+assert "agent-controls: skill dir bundled"          "$([[ -d $RT/.claude/skills/agent-controls ]] && echo true || echo false)"
+assert "agent-controls: standard.md bundled"        "$([[ -f $RT/.claude/skills/agent-controls/standard.md ]] && echo true || echo false)"
+assert "agent-controls: standard defines contract"  "$(grep -q 'operating contract' "$RT/.claude/skills/agent-controls/standard.md" && echo true || echo false)"
+assert "agent-controls: not hook-bearing"           "$([[ "$(count_cmd agent-controls)" == "0" ]] && echo true || echo false)"
+
+# Every agent definition must carry a complete operating contract (the inward
+# application of the agent-controls standard), and a read-only agent must not hold
+# write tools. This is a repo invariant, so check the source agents directly.
+AGENTS_DIR="${SCRIPT_DIR}/../agents"
+if command -v yq >/dev/null 2>&1; then
+  CONTRACT_KEYS="actor approval-rule blocked-actions fallback permitted-evidence required-check tool-scope"
+  contracts_ok=true
+  readonly_ok=true
+  for f in "$AGENTS_DIR"/*.md; do
+    keys="$(yq --front-matter=extract '.contract | keys | sort | join(" ")' "$f" 2>/dev/null || echo "")"
+    [[ "$keys" == "$CONTRACT_KEYS" ]] || { contracts_ok=false; echo "    (contract keys off in ${f##*/}: [$keys])"; }
+    scope="$(yq --front-matter=extract '.contract.tool-scope' "$f" 2>/dev/null || echo "")"
+    if [[ "$scope" == "read-only" ]]; then
+      wr="$(yq --front-matter=extract '[.tools[] | select(. == "Write" or . == "Edit")] | length' "$f" 2>/dev/null || echo "1")"
+      [[ "$wr" == "0" ]] || { readonly_ok=false; echo "    (read-only ${f##*/} holds Write/Edit)"; }
+    fi
+  done
+  assert "agent-controls: every agent has 7 contract keys" "$([[ "$contracts_ok" == "true" ]] && echo true || echo false)"
+  assert "agent-controls: read-only agents lack Write/Edit" "$([[ "$readonly_ok" == "true" ]] && echo true || echo false)"
+else
+  echo "  (skipping agent-controls contract checks — yq not installed)"
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

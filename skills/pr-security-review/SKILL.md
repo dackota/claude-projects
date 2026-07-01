@@ -70,6 +70,10 @@ and the gate honors a recorded verdict over any skip rule.
      "$verdict" "$verdict" "$sCrit" "$sHigh" "$sMed" "$sLow" \
      > "$GITDIR/pr-security-review/$SHA"
    ```
+   Then append a `run` journal entry (`type: run`, `agent: security-reviewer`, the
+   task id, `verdict`, `critical`/`high` counts, `rework`, `approver`): the `.git/`
+   verdict gates the PR, while the journal entry is the durable audit trail that
+   feeds `STATUS.md`'s **Pipeline health**. The `run-check.sh` hook nudges you.
 
 5. **Act on the verdict.**
    - **BLOCK (any CRITICAL):** Do NOT open the PR. Report the CRITICAL findings and

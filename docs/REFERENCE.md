@@ -18,6 +18,7 @@ Regenerated wholesale by `/sync-status`. The first file Claude reads each sessio
 - **Blocked / open questions**
 - **Recent decisions** — dated, linked
 - **Key facts** — load-bearing constraints
+- **Pipeline health** — gate block/rework rollup from journal `run` entries (the loop's "Learn" surface); omitted until runs exist
 - **Next moves**
 
 `STATUS.md` is a *view*, not a source of truth. If a fact needs to persist, put it in a plan, an ADR, or the journal.
@@ -28,14 +29,14 @@ Append-only event log. Never rewritten — only appended. Entry schema:
 
 ```yaml
 - date: YYYY-MM-DD
-  type: decision   # decision | plan | started | done | blocker | supersession | research | pr
+  type: decision   # decision | plan | started | done | blocker | supersession | research | pr | run
   summary: One or two sentences.
   refs:            # optional
     - docs/adr/0001-foo.md
   jira: DEVOPS-1234  # optional
 ```
 
-Claude appends an entry immediately when: a decision is made, a plan is finalized, a task status flips, a blocker is hit, a doc is superseded, research is finalized, or a PR is opened/merged/closed.
+Claude appends an entry immediately when: a decision is made, a plan is finalized, a task status flips, a blocker is hit, a doc is superseded, research is finalized, or a PR is opened/merged/closed. A `run` entry records each `/next` gate run (agent, verdict, rework, approver) — the pipeline audit trail that `/sync-status` rolls up into **Pipeline health**.
 
 ## Doc lifecycle frontmatter
 
