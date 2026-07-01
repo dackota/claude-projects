@@ -29,6 +29,15 @@ printf '%s' "$cmd" | grep -Eq 'gh[[:space:]]+pr[[:space:]]+create' || exit 0
 block() { echo "🔒 PR review gate: $1" >&2; exit 2; }
 
 cwd="${cwd:-$PWD}"
+# The gate keys strictly on the payload cwd — the directory the session is in when
+# `gh pr create` runs. It deliberately does NOT parse a leading `cd` out of the
+# command to redirect identity: every attempt to do so proved unsafe. A crafted
+# single command can make the parsed directory diverge from where gh actually
+# executes — via a second `cd`, a subshell / brace-group / `$( )` / backtick
+# substitution, or a multi-line decoy line — letting a stale/foreign PASS authorize
+# an unreviewed PR. For cwd-safe PR creation under parallel worktrees use
+# `scripts/repo.sh pr`, which resolves the worktree by path and self-enforces the
+# verdict inside its own subshell (no free-form command parsing).
 gitdir="$(git -C "$cwd" rev-parse --absolute-git-dir 2>/dev/null || true)"
 sha="$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)"
 [[ -z "$gitdir" || -z "$sha" ]] && \
