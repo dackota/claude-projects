@@ -209,130 +209,71 @@ that holds it (the *where*).
 
 ## Session Start
 
-Read `STATUS.md` first every session before opening any other file. It is a
-~500-token synthesis of current project state. If it is absent, run
-`/sync-status` to generate it.
+1. Read `STATUS.md` first — a ~500-token synthesis of current project state. If
+   it is absent, run `/sync-status` to generate it.
+2. **Before anything else, check `PROJECT.md`.** If its Goals section is still the
+   scaffold placeholder (empty, or just the `<!-- … -->` comment), the project has
+   no stated goal yet — do **not** proceed or invent one. Ask the user what the
+   project is trying to accomplish, fill `PROJECT.md` in with their answers (keep
+   the frontmatter), then continue. `/next` treats this as the **Bootstrap** phase.
+3. Run `/next` (bundled by default). It reads workspace state, determines the
+   current lifecycle phase, and routes to the next action — so you never have to
+   recall the `grill-with-docs → to-prd → to-issues → tdd` sequence. Run it any
+   time mid-session to ask "where am I / what's next?".
 
-When the `next` skill is installed (bundled by default), then run `/next` after
-reading `STATUS.md`: it determines the current lifecycle phase from workspace
-state and recommends (and routes to) the next action, so you never have to recall
-the `grill-with-docs → to-prd → to-issues → tdd` sequence yourself. You can also
-run `/next` any time mid-session to ask "where am I / what's next?".
+## Files & directories
 
-**Before anything else, check `PROJECT.md`.** If its Goals section is still the
-scaffold placeholder (empty, or just the `<!-- … -->` comment), the project has no
-stated goal yet — do **not** proceed or invent one. Ask the user what the project
-is trying to accomplish and the context behind it, fill `PROJECT.md` in with their
-answers (keep the frontmatter), then continue. `/next` treats this as the
-**Bootstrap** phase.
+- `project.yaml` — source of truth: repos, tasks, Jira key, config
+- `PROJECT.md` — goals and context (read this for the why)
+- `STATUS.md` — current-state synthesis; READ FIRST every session
+- `CONTEXT.md` — domain glossary: the canonical term for each concept, with
+  synonyms to steer away from. Use its vocabulary in plans, ADRs, issues, tests,
+  and commits. Glossary only — no implementation detail. `/grill-with-docs`
+  maintains it.
+- `journal.yaml` — append-only event log; never rewrite, only append (see below)
+- `docs/plans/` — planning documents (and local PRDs when not using a tracker)
+- `docs/adr/` — architectural decision records (see Documentation rules)
+- `docs/research/`, `docs/validations/` — research, and completion evidence
+- `scripts/` — one-off scripts not belonging to a specific repo
+- `repos/`, `worktrees/` — cloned repos and task worktrees, **managed only via
+  `scripts/repo.sh`** (see below). Both are `.gitignore`-excluded; repos are
+  tracked in `project.yaml`, worktrees derived live — read it to see what exists.
 
-## Project Structure
+## repos/ & worktrees/ — always via `scripts/repo.sh`
 
-- `project.yaml` - source of truth: repos, tasks, Jira key, and config
-- `PROJECT.md` - project goals and context (read this for the why)
-- `STATUS.md` - LLM-first current-state synthesis; READ THIS FIRST every session
-- `CONTEXT.md` - domain glossary; the canonical term for each concept
-- `journal.yaml` - append-only structured event log; never rewrite, only append
-- `CLAUDE.md` - this file
-- `docs/` - directory to store project documentation
-- `docs/plans/` - planning documents (and local PRDs when not using a tracker)
-- `docs/adr/` - architectural decision records (the why behind hard decisions)
-- `docs/research/` - directory to store research and analysis documents
-- `docs/validations/` - directory to store validation documents
-- `scripts/` - directory to contain one-off scripts used in the project but not
-  belonging to a specific repository
-- `repos/` - cloned repos; managed via `scripts/repo.sh` — never clone by hand
-- `worktrees/` - git worktrees for tasks, laid out `worktrees/<task-id>/<repo>`;
-  managed via `scripts/repo.sh`
+With the `repo` skill installed (default), every repo/worktree operation goes
+through `scripts/repo.sh`; a PreToolUse hook blocks raw `git clone`,
+`git worktree add`, and branch create/switch under `repos/`/`worktrees/`
+(read-only git and `git checkout -- <file>` stay allowed). Run `scripts/repo.sh`
+with no args for the command list, or see the `repo` skill.
 
-Code repos and worktrees are cloned inside the workspace but are
-`.gitignore`-excluded; repos are tracked via `project.yaml`, worktrees are
-derived live. Read `project.yaml` to see what repos and tasks exist.
+Key habits: worktrees drift as their base advances — run `scripts/repo.sh status`
+before relying on one, `sync` to catch it up. When a task depends on another still
+in review, **stack** on that branch (`repo.sh worktree <task> <repo> --onto
+<parent>`, or auto-derived from a single unmerged `blocked_by`) instead of
+waiting; `sync` re-points to the base once the parent merges.
 
-## repos/ and worktrees/ — always via `scripts/repo.sh`
+## Independent review
 
-When the `repo` skill is installed (bundled by default), all repo and worktree
-operations MUST go through `scripts/repo.sh`. A PreToolUse guard hook blocks raw
-`git clone`, `git worktree add`, and branch create/switch inside `repos/` and
-`worktrees/`; read-only git and `git checkout -- <file>` stay allowed.
+Two reviews guard each slice, each by a fresh agent that never saw the build
+conversation, run at different moments:
 
-```
-scripts/repo.sh clone <url> [name]             # clone into repos/, register in project.yaml
-scripts/repo.sh worktree <task> <repo> [--onto <parent>]  # start work; stack on <parent> or auto-derive from blocked_by
-scripts/repo.sh sync <task> [repo]             # merge the base (or stacked parent) in (worktrees drift while you work)
-scripts/repo.sh status [task]                  # see how far behind/ahead each worktree is
-scripts/repo.sh remove <task> [repo]           # remove worktree + delete local branch (safe by default)
-scripts/repo.sh list                           # registered repos
-```
+- **Acceptance — right after the build.** When `/next` builds a task it commits
+  the slice and runs `implementation-validator` against the acceptance criteria.
+  A CRITICAL gap **loops back to `tdd`**; the task stays `active` (never `done`,
+  let alone a PR) until acceptance passes.
+- **Security — at the PR gate.** With `pr-security-review` installed (default),
+  CLI `gh pr create` is gated by `security-reviewer`. A CRITICAL blocks until
+  fixed (each fix commit re-reviews); HIGH/MEDIUM/LOW are noted in the PR body but
+  pass. A review is required when the diff touches infra (any size) or is code
+  over ~25 lines; small code-only and docs-only diffs skip. `--web`/GitHub UI
+  bypass the gate.
 
-Worktrees go stale as their base branch advances. Run `scripts/repo.sh status`
-before relying on one, and `scripts/repo.sh sync` to catch it up — the guard's
-staleness hook also warns before the first edit in a stale worktree.
+## Documentation rules
 
-**Stacked work — don't stall on review.** When a task depends on another that is
-still in review (its branch exists but isn't merged), stack the new worktree on
-that branch instead of waiting: `repo.sh worktree <task> <repo> --onto <parent>`,
-or just `repo.sh worktree <task> <repo>` when the task has exactly one unmerged
-blocker in `project.yaml` (auto-derived). The stack pointer is the branch's git
-upstream — `sync` then merges the parent's review-fix commits, and re-points to
-the base automatically once the parent merges (the stacked PR retargets). If a
-stacked parent is **reopened** (a security-review or manual reopen — acceptance is
-settled before a task is marked done, so it won't be that), `repo.sh status` flags
-the child as **BASE REOPENED** — it is building on shifting ground; `repo.sh` never
-auto-rebases a disturbed stack, so reconcile it deliberately.
-
-## Independent review — acceptance at build time, security at PR time
-
-Two independent reviews guard a slice, each by a fresh agent that never saw the
-implementation conversation — and they run at **different moments**:
-
-1. **Acceptance — right after the build (not at the PR).** When `/next` builds a
-   task, the moment the `tdd-implementer` finishes, `/next` commits the slice and
-   spawns the `implementation-validator` to check the diff against the task's
-   acceptance criteria. A CRITICAL gap (a promised behavior undelivered) **loops
-   straight back to `tdd`** — the task stays `active` and never reaches `done` (let
-   alone a PR) until acceptance passes. This catches "doesn't do what it promised"
-   in seconds, not at PR review.
-2. **Security — at the PR gate.** When the `pr-security-review` skill is installed
-   (bundled by default), `gh pr create` is gated by a security review:
-   `security-reviewer` checks the change against the code/infra checklists. It
-   records a verdict under `.git/pr-security-review/<sha>`; a CRITICAL blocks until
-   fixed (each fix is a new commit, which re-reviews automatically), HIGH/MEDIUM/LOW
-   are noted in the PR body but pass.
-
-When does the **PR security gate** require a review (no recorded verdict)? When the
-diff touches **infra** (any size) or is a **code change over
-`PR_SECURITY_MAX_SMALL_LINES` lines** (default 25); small code-only and docs-only
-diffs skip. You can always run the `pr-security-review` skill by hand — a recorded
-verdict is honored over any skip rule. The gate covers CLI `gh pr create` only —
-`--web` and the GitHub UI bypass it.
-
-## CONTEXT.md — domain glossary
-
-`CONTEXT.md` is the project's glossary: the canonical name for each domain
-concept, with synonyms to steer away from. Use its vocabulary in plans, ADRs,
-issues, tests, and commits so language stays consistent across sessions. It is a
-glossary and nothing else — no implementation details, no general programming
-concepts. `/grill-with-docs` maintains it as terms are resolved.
-
-## docs/adr/ — Architectural Decision Records
-
-An ADR records a decision and the reasoning behind it. Write one only when all
-three hold:
-
-1. **Hard to reverse** — the cost of changing your mind later is meaningful.
-2. **Surprising without context** — a future reader will wonder "why this way?"
-3. **The result of a real trade-off** — there were genuine alternatives.
-
-If any is missing, skip the ADR — the journal `decision` line already records
-that the decision happened. ADRs use sequential numbering (`0001-slug.md`) and
-can be a single paragraph. ADRs and `CONTEXT.md` are exempt from the lifecycle
-frontmatter below and from the `/sync-status` active-doc scan.
-
-## Lifecycle Frontmatter
-
-Every doc in `docs/plans/`, `docs/research/`, and `docs/validations/` MUST carry
-this frontmatter (ADRs and `CONTEXT.md` are exempt — see above):
+All artifacts are Markdown with dash-separated file names. Every doc in
+`docs/plans/`, `docs/research/`, and `docs/validations/` MUST carry lifecycle
+frontmatter (ADRs and `CONTEXT.md` are exempt):
 
 ```yaml
 ---
@@ -340,93 +281,68 @@ title: <human-readable title>
 created: YYYY-MM-DD
 last_updated: YYYY-MM-DD
 status: active            # active | superseded | done | abandoned
-supersedes: []            # paths to docs this replaces
+supersedes: []            # paths this replaces
 superseded_by: null       # path to doc that replaced this
-related:                  # cross-references for navigation
-  - docs/adr/0001-foo.md
+related: []               # cross-references for navigation
 jira: null                # optional Jira issue key
 task: null                # optional task id from project.yaml
 ---
 ```
 
-`status` is the authoritative currency signal. Skip non-`active` docs unless
-explicitly referenced or tracing history.
+`status` is the authoritative currency signal — skip non-`active` docs unless
+tracing history. Never move or delete a superseded doc: flip `status: superseded`,
+set `superseded_by`, and add a short block-quote at the top saying when/why.
 
-Superseded docs stay in place — never move or delete them. Flip
-`status: superseded`, set `superseded_by`, and add a short block-quote at the
-top of the body explaining when and why the doc was superseded.
+Doc types:
+
+| Type | Where | When / must include |
+|------|-------|---------------------|
+| **Plan** | `docs/plans/` | "create a plan", "plan it out". Detail Problem, Solution, Trade-offs, Considerations; break into human-reviewable Tasks. |
+| **ADR** | `docs/adr/0001-slug.md` | A decision that is (1) hard to reverse, (2) surprising without context, (3) a real trade-off. If any bar is missing, skip it — a `decision` journal line suffices. |
+| **Research** | `docs/research/` | "research how X works"; may be referenced by multiple plans. |
+| **Validation** | `docs/validations/` | When a meaningful plan/milestone finishes (not every task). Auditable evidence: commands run, `path/to/file.ext:34`, test output. Reference it from the `done` journal entry. |
+| **Script** | `scripts/` | Repeatable or logic-heavy work. Bash preferred, Python OK. |
 
 ## journal.yaml
 
-Append-only event log. Never edit existing entries. Entry schema:
+Append-only; never edit existing entries. Manual escape hatch:
+`/journal <type> "<summary>"`. Entry schema:
 
 ```yaml
 - date: YYYY-MM-DD
   type: decision   # decision | plan | started | done | blocker | supersession | research | pr
   summary: <one or two sentences>
-  refs:            # optional list of paths or external IDs
-    - docs/adr/0001-foo.md
-    - DEVOPS-1525
+  refs: []         # optional paths or external IDs
   jira: DEVOPS-1525  # optional
 ```
 
-Append an entry immediately when:
-
-| Event                                    | type          |
-|------------------------------------------|---------------|
-| Decision made or reversed                | `decision` (link the ADR if one was written) |
-| Plan finalized or revised                | `plan`        |
-| Task status flipped in `project.yaml`    | `started` / `done` |
-| Blocker hit                              | `blocker`     |
-| Doc superseded (frontmatter flipped)     | `supersession`|
-| Research finalized                       | `research`    |
-| PR opened, merged, or closed             | `pr`          |
-
-Manual escape hatch: `/journal <type> "<summary>"`.
+Append immediately when: a decision is made/reversed (`decision` — link the ADR
+if one was written) · a plan is finalized/revised (`plan`) · a task status flips
+(`started`/`done`) · a blocker is hit (`blocker`) · a doc is superseded
+(`supersession`) · research is finalized (`research`) · a PR is opened/merged/
+closed (`pr`).
 
 ## /sync-status
 
-Regenerates `STATUS.md` wholesale by reading `PROJECT.md`, `project.yaml`,
-`journal.yaml`, frontmatter of all `docs/**.md`, and full content of
-`status: active` docs. Run it — or Claude invokes it automatically — when
-**both** conditions are true:
+Regenerates `STATUS.md` wholesale from `PROJECT.md`, `project.yaml`,
+`journal.yaml`, and doc frontmatter/active-doc content. Run it (or Claude runs it
+automatically) when **both** hold: (1) a significant change occurred (plan
+finalized, decision committed, task status flipped, meaningful blocker); and
+(2) a natural pause has arrived (handing back, finishing a work block). Not after
+every doc edit.
 
-1. A significant change occurred (plan finalized, decision committed, task
-   status flipped, meaningful blocker recorded).
-2. A natural pause has arrived (handing back to the user, finishing a logical
-   work block).
-
-Do not sync after every individual doc edit.
-
-First run bootstraps missing files: creates `STATUS.md` and `journal.yaml` if
-absent; treats docs missing `status` frontmatter as `active`.
-
-## /journal
-
-Appends a single typed entry to `journal.yaml`. Usage:
-
-```
-/journal <type> "<summary>"
-```
-
-Valid types: `decision` | `plan` | `started` | `done` | `blocker` |
-`supersession` | `research` | `pr`.
-
-Refuses to run if no `journal.yaml` is present in the working directory tree.
-
-## Issue tracker and tasks
+## Issue tracker & tasks
 
 Where PRDs and vertical-slice issues go is driven by `project.yaml`:
 
-- **`jira_key` is set** → publish to Jira. PRDs get the `ready-for-agent` label.
-  Each issue gets an `afk` or `hitl` label mirroring its type, and
-  `ready-for-agent` is added to AFK issues only — never HITL.
-- **`jira_key` is empty** → keep work local. A PRD becomes
-  `docs/plans/<slug>-prd.md`; vertical-slice issues become `tasks` in
-  `project.yaml`.
-- Use GitHub Issues only when explicitly asked to.
+- **`jira_key` set** → publish to Jira. PRDs get `ready-for-agent`; each issue
+  gets an `afk`/`hitl` label mirroring its type, and `ready-for-agent` is added to
+  AFK issues only — never HITL.
+- **`jira_key` empty** → keep local. PRD → `docs/plans/<slug>-prd.md`;
+  vertical-slice issues → `tasks` in `project.yaml`.
+- Use GitHub Issues only when explicitly asked.
 
-A **task** is a vertical slice tracked in `project.yaml`:
+A **task** is a vertical slice in `project.yaml`:
 
 ```yaml
 tasks:
@@ -435,66 +351,12 @@ tasks:
     type: AFK                      # AFK | HITL
     status: todo                   # todo | active | done | blocked
     blocked_by: []                 # list of task ids
-    plan: docs/plans/chart-split-prd.md   # source PRD/plan
+    plan: docs/plans/chart-split-prd.md
     jira: null                     # set when mirrored to a Jira issue
 ```
 
-Status transitions drive the journal: `todo → active` writes a `started` entry,
-`active → done` writes a `done` entry, any → `blocked` writes a `blocker` entry.
-`/sync-status` reads `active` tasks for "Active work" and `blocked` for "Blocked
-/ open questions."
-
-## Artifact Types
-
-All artifacts MUST BE written in Markdown unless otherwise mentioned during a
-session. File names MUST use dash-separated words. For all Markdown files in
-`docs/` you MUST include the lifecycle frontmatter described above.
-
-- Plans are used to iterate on an idea and used as the source context for work
-  to be done. Plans MUST detail the Problem, Solution, Trade-offs, and
-  Considerations. Plans MUST BE broken down into Tasks. Each Task MUST BE a
-  distinct body of work. A Task MUST BE able to be easily reviewable by a human.
-  Store these in `docs/plans/`. Use this directory when I say things like:
-  "create a plan", "let's plan out", "I want to plan a", "plan it out".
-
-- Architectural Decision Records (ADRs) capture the reasoning behind a decision
-  that is hard to reverse, surprising without context, and the result of a real
-  trade-off. Store these in `docs/adr/` using sequential numbering
-  (`0001-slug.md`). A lightweight decision that does not clear all three bars
-  needs only a `decision` line in `journal.yaml` — not a document.
-
-- Research documents are used to store in-depth information about a topic or
-  work item. The research may be referenced by multiple plans. Store these in
-  `docs/research/`. Use this directory when I say things like: "Research how X
-  works". This can also be used when a plan requires in-depth research.
-
-- Validation documents prove that a plan was successfully completed. Produce one
-  when a meaningful plan or milestone finishes (not every task) — or whenever I
-  ask you to validate — and reference it from the corresponding `done` entry in
-  `journal.yaml`. Review the plan, gather evidence of completed work, and create
-  the document. This MUST include tangible and auditable examples such as
-  commands run, file paths and lines `path/to/file.ext:34`, or the output summary
-  of a successful test run. Store these documents in `docs/validations/`.
-
-- Scripts for complex or repeatable work items. When you need to do something
-  that is more complex due to the number of commands or the amount of logic
-  (conditionals, loops, advanced scripting language features) or when you need to
-  run the same command set over and over again you will create a script. Scripts
-  will be put into `scripts/`. Scripts should be written in Bash but you can use
-  Python as well.
-
-- Repos (`repos/`) stores repositories this project needs for research or
-  changes. NEVER run `git clone` directly — use
-  `scripts/repo.sh clone <url> [name]`, which clones into `repos/` and registers
-  the repo in `project.yaml`. `repo.sh` fetches automatically before every use,
-  so clones stay current.
-
-- Worktrees (`worktrees/`) stores git worktrees for task work, laid out as
-  `worktrees/<task-id>/<repo>` (one task can span multiple repos). Worktrees MUST
-  be used when working on Tasks — never create branches inside a base clone.
-  Use `scripts/repo.sh worktree <task> <repo>` to start, `scripts/repo.sh sync`
-  to catch a worktree up to its base branch, and `scripts/repo.sh status` to
-  check for drift. Remove with `scripts/repo.sh remove <task> [repo]`.
+Status transitions drive the journal: `todo → active` → `started`,
+`active → done` → `done`, any → `blocked` → `blocker`.
 CLAUDE_MD_EOF
 }
 
