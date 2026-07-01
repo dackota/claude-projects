@@ -226,13 +226,11 @@ files, so the ambient cwd drifts between tasks:
   worktree).
 - Use `git -C <worktree> …` for every git op; don't `cd` to mutate the shared cwd.
 - Open each PR with `scripts/repo.sh pr <task>` — its `cd` is internal, so it is
-  cwd-safe and self-enforces the recorded review verdict. For a direct
-  `gh pr create`, the gate trusts a leading `cd` **only** in the exact shape
-  `cd <worktree> && gh pr create …` (one `cd`, immediately before `gh`, nothing
-  else between, single-line). Any other shape — a second `cd`, a subshell, `$(…)`,
-  an intervening command, or a multi-line command — falls back to the session cwd
-  and **fails closed** (blocks unless that cwd is itself the PR's repo). When
-  juggling several worktrees, use `repo.sh pr`.
+  cwd-safe and self-enforces the recorded review verdict. **This is the path to use
+  under fan-out.** A **direct** `gh pr create` keys the PR gate on the *session's
+  current directory* — the gate deliberately does **not** parse a leading `cd`
+  (that repeatedly proved exploitable) — so run it only from **inside** the target
+  worktree; a drifted cwd makes the gate block. In short: prefer `repo.sh pr`.
 
 **Stacked work (when the task touches a code repo).** Create the worktree through
 `scripts/repo.sh worktree <task> <repo>` — if the task's blocker is still in
