@@ -37,7 +37,13 @@ cwd="${cwd:-$PWD}"
 # the repo/HEAD from THAT directory, so the gate keys on the repo the PR is
 # actually created in.
 _cd="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+([^&;|]+)[[:space:]]*(&&|;).*/\1/p')"
-if [[ -n "$_cd" ]]; then
+# Only trust a SINGLE leading `cd`. With multiple `cd` tokens the effective cwd at
+# `gh pr create` (the *last* cd, or a compounded relative path) can differ from the
+# first — rather than emulate shell cwd semantics, refuse to guess and fall back to
+# the payload cwd (fail closed), so a stale/foreign verdict or a wrong-repo diff
+# classification can never authorize the PR.
+_cdn="$(printf '%s' "$cmd" | grep -oE '(^|&&|[;&|])[[:space:]]*cd[[:space:]]' | wc -l | tr -d ' ')"
+if [[ -n "$_cd" && "${_cdn:-0}" -eq 1 ]]; then
   _cd="${_cd#"${_cd%%[![:space:]]*}"}"     # strip leading whitespace
   _cd="${_cd%"${_cd##*[![:space:]]}"}"     # strip trailing whitespace
   _cd="${_cd#[\"\']}"; _cd="${_cd%[\"\']}" # strip one surrounding quote, if present
