@@ -29,6 +29,23 @@ printf '%s' "$cmd" | grep -Eq 'gh[[:space:]]+pr[[:space:]]+create' || exit 0
 block() { echo "🔒 PR review gate: $1" >&2; exit 2; }
 
 cwd="${cwd:-$PWD}"
+
+# This hook fires BEFORE the command runs, so the payload's cwd is the session's
+# working directory as it was *before* the command — stale for the common
+# `cd <worktree> && gh pr create …` idiom (parallel work across worktrees drifts
+# that one shared cwd). If the command begins with `cd <dir> &&` (or `;`), resolve
+# the repo/HEAD from THAT directory, so the gate keys on the repo the PR is
+# actually created in.
+_cd="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+([^&;|]+)[[:space:]]*(&&|;).*/\1/p')"
+if [[ -n "$_cd" ]]; then
+  _cd="${_cd#"${_cd%%[![:space:]]*}"}"     # strip leading whitespace
+  _cd="${_cd%"${_cd##*[![:space:]]}"}"     # strip trailing whitespace
+  _cd="${_cd#[\"\']}"; _cd="${_cd%[\"\']}" # strip one surrounding quote, if present
+  case "$_cd" in
+    /*) cwd="$_cd" ;;
+    *)  cwd="$cwd/$_cd" ;;
+  esac
+fi
 gitdir="$(git -C "$cwd" rev-parse --absolute-git-dir 2>/dev/null || true)"
 sha="$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)"
 [[ -z "$gitdir" || -z "$sha" ]] && \

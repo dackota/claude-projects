@@ -11,6 +11,8 @@
 #                                         stack on <parent>'s branch (or auto-derive from a
 #                                         single unmerged blocked_by), else branch off base
 #   repo.sh sync <task> [repo]            Fetch + merge the base (or the stacked parent) in
+#   repo.sh pr <task> [repo] [-- <gh args>]  Open a PR for a task's worktree — cwd-safe
+#                                         (the cd is internal), honors the recorded review verdict
 #   repo.sh status [task]                 Live drift/dirty report for worktrees
 #   repo.sh remove <task> [repo] [--force] Remove worktree(s) + delete local branch
 #   repo.sh list                          List registered repos
@@ -369,6 +371,70 @@ cmd_list() {
   echo ""
 }
 
+cmd_pr() {
+  command -v gh >/dev/null 2>&1 || die "gh (GitHub CLI) is required for 'repo.sh pr'. Install: brew install gh"
+
+  # Args: <task> [repo] [-- <extra gh pr create args>]. Everything after `--` is
+  # passed through verbatim to `gh pr create` (e.g. --title/--body-file/--draft).
+  local args=() passthru=() seen_dd=false a
+  for a in "$@"; do
+    if $seen_dd; then passthru+=("$a"); continue; fi
+    if [[ "$a" == "--" ]]; then seen_dd=true; continue; fi
+    args+=("$a")
+  done
+  local task="${args[0]:-}" only_repo="${args[1]:-}"
+  [[ -z "$task" ]] && die "Usage: repo.sh pr <task> [repo] [-- <extra gh pr create args>]"
+
+  local task_dir="$WORKTREES_DIR/$task"
+  [[ -d "$task_dir" ]] || die "No worktrees for task '$task' (looked in worktrees/$task)."
+
+  # A PR is per-repo: resolve exactly one target worktree.
+  shopt -s nullglob
+  local matches=() m
+  for m in "$task_dir"/*; do
+    [[ -e "$m/.git" ]] || continue
+    [[ -n "$only_repo" && "$(basename "$m")" != "$only_repo" ]] && continue
+    matches+=("$m")
+  done
+  [[ ${#matches[@]} -eq 0 ]] && die "No matching worktree for task '$task'${only_repo:+ repo '$only_repo'}."
+  [[ ${#matches[@]} -gt 1 ]] && die "Task '$task' spans multiple repos — name one: repo.sh pr $task <repo>"
+
+  local wt="${matches[0]}" repo base branch
+  repo="$(basename "$wt")"
+  base="$(base_branch "$repo")"
+  branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  [[ -z "$branch" || "$branch" == "HEAD" ]] && die "worktrees/$task/$repo has no branch checked out."
+
+  # Guards: clean tree, and actually ahead of the base.
+  [[ -n "$(git -C "$wt" status --porcelain)" ]] && \
+    die "worktrees/$task/$repo has uncommitted changes — commit them first."
+  git -C "$wt" fetch -q origin "$base" 2>/dev/null || true
+  local ahead; ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
+  [[ "${ahead:-0}" -eq 0 ]] && die "worktrees/$task/$repo has no commits beyond origin/$base — nothing to PR."
+
+  # Self-enforce the PR review gate. Because repo.sh invokes gh *internally*, the
+  # PreToolUse gh-pr-create hook never sees it — so honor the recorded verdict
+  # here (same file the gate / pr-security-review skill write, keyed by HEAD SHA).
+  local sha gitdir verdict_file verdict
+  sha="$(git -C "$wt" rev-parse HEAD)"
+  gitdir="$(git -C "$wt" rev-parse --absolute-git-dir)"
+  verdict_file="$gitdir/pr-security-review/$sha"
+  [[ -f "$verdict_file" ]] || \
+    die "No PR review verdict for HEAD ($sha). Run the pr-security-review skill in worktrees/$task/$repo, then re-run."
+  verdict="$(head -n1 "$verdict_file" 2>/dev/null || echo BLOCK)"
+  [[ "$verdict" == "PASS" ]] || \
+    die "PR review verdict for HEAD is '$verdict' — resolve the CRITICAL findings (each fix is a new commit, re-reviewed), then re-run."
+
+  # Default to --fill (title/body from commits) when the caller passes no gh args.
+  [[ ${#passthru[@]} -eq 0 ]] && passthru=(--fill)
+
+  info "Pushing '$branch' and opening a PR into '$base' (repo '$repo')"
+  git -C "$wt" push -u origin "$branch"
+  # cwd-safe: this cd is the script's own subshell, never the caller's shell.
+  # gh detects the repo from the worktree's origin remote.
+  ( cd "$wt" && gh pr create --base "$base" --head "$branch" "${passthru[@]}" )
+}
+
 usage() { grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'; }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -377,6 +443,7 @@ case "$SUB" in
   clone)    cmd_clone "$@" ;;
   worktree) cmd_worktree "$@" ;;
   sync)     cmd_sync "$@" ;;
+  pr)       cmd_pr "$@" ;;
   status)   cmd_status "$@" ;;
   remove)   cmd_remove "$@" ;;
   list)     cmd_list "$@" ;;
