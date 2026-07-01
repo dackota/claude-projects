@@ -10,6 +10,14 @@ This skill takes the current conversation context and codebase understanding and
 
 1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the vocabulary from `CONTEXT.md` (the project's domain glossary) throughout the PRD, and respect any ADRs in `docs/adr/` that touch the area you're working in.
 
+   **Observability (service projects).** If `project.yaml` has
+   `observability.enabled: true` (or the design clearly ships a runtime service but
+   the flag wasn't set in grilling — set it now), capture the observability intent
+   in the PRD: the critical paths, any SLOs, and the RED/structured-logging baseline
+   from `.claude/skills/observability/standard.md`. Put it in **Implementation
+   Decisions** and **Testing Decisions** so `to-issues` can turn it into per-slice
+   acceptance criteria. Skip entirely for non-service projects.
+
 2. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
 
 A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.

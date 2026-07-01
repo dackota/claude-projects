@@ -30,6 +30,7 @@ Bundled skills:
 | `security-review` | App-code security checklist (OWASP, secrets, authn/z, injection) |
 | `cloud-infra-security` | Cloud/IaC security checklist (IAM, network, CI/CD, secrets) |
 | `pr-security-review` | Gates `gh pr create` behind an independent `security-reviewer` agent |
+| `observability` | Shift-left observability. Canonical `standard.md` has two layers: a **baseline** (structured logs, correct levels, no swallowed errors) that `tdd` applies to every build regardless of flag; and a **service standard** (RED metrics, OTel, tracing) gated by `project.yaml` `observability.enabled` — wired into `to-issues` acceptance criteria, built in `tdd`, and gated via the `otel-observability-engineer` agent (parallel to `implementation-validator`, BLOCKER loops back to tdd) |
 
 ## Working on this repo
 

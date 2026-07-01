@@ -534,6 +534,10 @@ jira_key: "${JIRA_KEY}"
 created: ${TODAY}
 repos: []
 tasks: []
+observability:
+  enabled: false        # flip true (grill/to-prd) when this project ships a runtime service
+  otlp_endpoint: ""     # OTLP Collector endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT)
+  service_name: ""      # resource attribute; defaults to the project name
 EOF
 )"
 

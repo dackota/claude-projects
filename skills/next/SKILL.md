@@ -18,8 +18,9 @@ directly invokable by hand. `/next` just spares you the routing decision.
 
 > `/next` covers the full flow: phase detection (local **and Jira** mode),
 > auto-dispatch with session seams, the **post-build acceptance-validator gate**
-> (run right after the build, before the task is marked done), acceptance
-> loop-back, parallel build fan-out, and stacked-worktree integration.
+> (run right after the build, before the task is marked done, in parallel with an
+> **observability gate** for service tasks), acceptance loop-back, parallel build
+> fan-out, and stacked-worktree integration.
 
 ## How to run
 
@@ -167,15 +168,26 @@ disposable. For each build:
    the task's acceptance criteria / "what to build" — **not** the implementation
    rationale; independence is the point. It returns `VERDICT: PASS | BLOCK`
    (`BLOCK` iff `CRITICAL > 0`).
-   - **PASS** → flip the task `active → done` and proceed to **Land** (the PR's
+
+   **Observability gate (service tasks only — run in parallel).** If `project.yaml`
+   has `observability.enabled: true`, the agent `otel-observability-engineer` is
+   installed, **and** the diff adds a request-serving path, spawn that agent on the
+   same diff **in the same message** as `implementation-validator` so both
+   review-only gates run concurrently (no added latency). It returns its own
+   `VERDICT: PASS | BLOCK` (`BLOCK` iff `BLOCKER > 0`) against
+   `.claude/skills/observability/standard.md`. Skip it silently when the flag is
+   off, the agent isn't installed, or the diff adds no request path.
+
+   Treat the two gates as one barrier — the slice advances only if **both** PASS:
+   - **Both PASS** → flip the task `active → done` and proceed to **Land** (the PR's
      security review still runs at `gh pr create`; acceptance is already done).
-   - **BLOCK** → the slice doesn't deliver what it promised. Leave the task
-     `active`, write a `blocker` journal entry with the CRITICAL gaps, and
-     **re-spawn the `tdd-implementer`** framed as *closing the flagged acceptance
-     gaps* — pass it the validator's CRITICAL findings, not a fresh build. Its
-     fixes are new commits → re-run the validator on the new `HEAD`. Loop until
-     `PASS`. This keeps the loop-back cheap and local — the task never reaches a PR
-     (or even `done`) until acceptance passes.
+   - **Either BLOCK** → the slice isn't ready. Leave the task `active`, write a
+     `blocker` journal entry with the failing gate's findings (the validator's
+     CRITICAL acceptance gaps and/or the observability BLOCKERs), and **re-spawn the
+     `tdd-implementer`** framed as *closing those specific gaps* — pass it the
+     findings, not a fresh build. Its fixes are new commits → re-run the failed
+     gate(s) on the new `HEAD`. Loop until both PASS. This keeps the loop-back cheap
+     and local — the task never reaches a PR (or even `done`) until it passes.
 
 Invoking `/tdd` by hand is different: it runs the loop **inline in the main agent**
 (Opus) for an ad-hoc build — see the `tdd` skill's main-agent mode. `/next` always
@@ -186,11 +198,11 @@ takes the sub-agent path.
   above; the user may name a different unblocked task instead.
 - **Build**: a task is already `active` → continue building it — re-dispatch to the
   sub-agent with the prior summary and what's left. If the most recent `blocker`
-  journal entry is a **post-build acceptance gate** failure (the validator returned
-  `BLOCK`; the task stayed `active`), frame the work as *closing the flagged
-  acceptance gaps* — read the gate's CRITICAL findings first and pass them to the
-  sub-agent — not as starting fresh. Re-run the acceptance gate (step 4) on the new
-  `HEAD` before the task can move on.
+  journal entry is a **post-build gate** failure (the acceptance validator and/or
+  the observability gate returned `BLOCK`; the task stayed `active`), frame the work
+  as *closing the flagged gaps* — read the gate's CRITICAL/BLOCKER findings first and
+  pass them to the sub-agent — not as starting fresh. Re-run the failed gate(s)
+  (step 4) on the new `HEAD` before the task can move on.
 
 **Parallel build fan-out (opt-in — when several tasks are unblocked at once).**
 When the Pick frontier holds **two or more mutually independent** unblocked tasks
@@ -211,9 +223,11 @@ blocker to land).
    task's acceptance criteria, its worktree as the working directory, plus
    `CONTEXT.md`/ADRs/test command. No task sees another's context.
 4. **Land each independently as it returns** (pipeline, not barrier): review +
-   re-run its tests → commit its slice → run the post-build acceptance gate
-   (`implementation-validator`) on its diff → `active → done`, or loop that one task
-   back to `tdd` on a CRITICAL gap. One task looping back never holds up the others.
+   re-run its tests → commit its slice → run the post-build gate(s) on its diff —
+   `implementation-validator`, plus `otel-observability-engineer` in parallel for a
+   service task that added a request path — → `active → done` only if all PASS, or
+   loop that one task back to `tdd` on a CRITICAL/BLOCKER gap. One task looping back
+   never holds up the others.
 5. **Keep batches modest** (a few at a time) so reviews and acceptance gates stay
    tractable; a large frontier builds in waves.
 
