@@ -74,6 +74,7 @@ assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.
 assert "default: observability skill bundled" "$([[ -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
 assert "default: observability standard.md"   "$([[ -f $TARGET/.claude/skills/observability/standard.md ]] && echo true || echo false)"
 assert "default: otel agent auto-installed"   "$([[ -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "default: tdd baseline is unconditional" "$(grep -q 'Observable by default (baseline' "$TARGET/.claude/agents/tdd-implementer.md" && echo true || echo false)"
 
 # ── dry-run creates nothing ───────────────────────────────────────────────────
 DRY_TARGET="${TMPDIR_BASE}/dry-run-test"
@@ -367,7 +368,9 @@ bash "$PROJ" "obs-test" --dir "$TMPDIR_BASE" --skills observability >/dev/null
 assert "obs: skill dir copied"                      "$([[ -d $OT/.claude/skills/observability ]] && echo true || echo false)"
 assert "obs: standard.md present"                   "$([[ -f $OT/.claude/skills/observability/standard.md ]] && echo true || echo false)"
 assert "obs: otel agent wired from frontmatter"     "$([[ -f $OT/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
-assert "obs: standard defines RED baseline"         "$(grep -q 'RED is the floor' "$OT/.claude/skills/observability/standard.md" && echo true || echo false)"
+assert "obs: standard defines RED (service layer)"  "$(grep -q 'RED is the floor' "$OT/.claude/skills/observability/standard.md" && echo true || echo false)"
+assert "obs: standard has universal Baseline layer"  "$(grep -q '## Baseline' "$OT/.claude/skills/observability/standard.md" && echo true || echo false)"
+assert "obs: standard has Service standard layer"    "$(grep -q '## Service standard' "$OT/.claude/skills/observability/standard.md" && echo true || echo false)"
 assert "obs: subset does NOT pull unrelated tdd"    "$([[ ! -d $OT/.claude/skills/tdd ]] && echo true || echo false)"
 
 # ── summary ──────────────────────────────────────────────────────────────────

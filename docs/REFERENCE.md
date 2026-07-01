@@ -175,12 +175,14 @@ When `/next` builds a task, the moment the `tdd-implementer` returns a `COMPLETE
 - The `implementation-validator` is review-only (no `Write`/`Edit`) and is copied into `.claude/agents/` via the `next` skill's `agents:` frontmatter.
 - This gate is part of the `/next` **subagent** build only. Hand-invoked `/tdd` runs inline with you watching, so there is no auto-gate — your own review is the acceptance check.
 
-### Observability — a parallel build-time gate (`/observability`)
+### Observability — a baseline everywhere, a gate for services (`/observability`)
 
-For **service projects** (`project.yaml` `observability.enabled: true`), a task that adds a request-serving path gets a second post-build gate alongside acceptance. `/next` spawns the **`otel-observability-engineer`** agent on the same diff, **in parallel with** `implementation-validator` (both review-only, so no added latency), to verify the slice against the project's canonical `standard.md` (RED metrics, structured JSON logs w/ trace correlation, OTel semantic conventions, cardinality, SDK flush).
+The canonical `standard.md` has **two layers**. The **baseline** (structured logs, correct levels, no swallowed errors) rides in `tdd`'s build discipline on **every** task — service or not, flag or no flag — so even a CLI or library ships diagnosable logging. The **service standard** (RED metrics, OTLP export, tracing, SDK lifecycle) is gated by `project.yaml` `observability.enabled: true`.
+
+For **service projects**, a task that adds a request-serving path gets a second post-build gate alongside acceptance. `/next` spawns the **`otel-observability-engineer`** agent on the same diff, **in parallel with** `implementation-validator` (both review-only, so no added latency), to verify the slice against the service standard (RED, trace-correlated logs, OTel semantic conventions, cardinality, SDK flush).
 
 - A **BLOCKER** (a request path missing a RED member, or unstructured logging) loops the slice back to `tdd` exactly like an acceptance CRITICAL; HIGH/MEDIUM/LOW are recorded but pass.
-- The whole feature is **dormant** unless the flag is set — it is bundled into every workspace but adds nothing for CLI/IaC/docs projects. The flag is set during design (`grill-with-docs`/`to-prd`); observability then enters `to-issues` acceptance criteria and is built by `tdd`, so the standard is designed-in, not bolted on. The agent is copied into `.claude/agents/` via the `observability` skill's `agents:` frontmatter.
+- The **service standard** is dormant unless the flag is set (bundled into every workspace, but no RED/OTLP for CLI/IaC/docs projects). The flag is set during design (`grill-with-docs`/`to-prd`); observability then enters `to-issues` acceptance criteria and is built by `tdd`, so it's designed-in, not bolted on. The agent is copied into `.claude/agents/` via the `observability` skill's `agents:` frontmatter.
 
 ### Security — the PR gate (`/pr-security-review`)
 

@@ -134,7 +134,7 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/tdd` | Red-green-refactor, one test at a time; the build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent, then runs the post-build acceptance gate |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent security review before `gh pr create` (acceptance is validated earlier, by `/next`'s post-build gate) |
-| `/observability` | Shift-left observability for **service** projects — RED metrics, structured JSON logs, OTel. Dormant unless `project.yaml` `observability.enabled`; then it enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (parallel to `implementation-validator`) |
+| `/observability` | Shift-left observability. A **baseline** (structured logs, correct levels, no swallowed errors) applies to every build; a flag-gated **service standard** (RED metrics, OTel, tracing) enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (parallel to `implementation-validator`) |
 | `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks) |
 | `/sync-status` | Regenerates `STATUS.md` from current state (mostly automatic via hooks) |
 | `/codebase-researcher` | Optional read-only codebase mapper; writes findings to `docs/research/` |

@@ -8,13 +8,18 @@ agents:
 
 # Observability
 
-Makes scaffolded **services** observable by design rather than reviewed after the
-fact. The canonical bar lives in [standard.md](./standard.md); this file is the
-contract the lifecycle phases and the gate follow.
+Makes software observable by design rather than reviewed after the fact. The
+canonical bar lives in [standard.md](./standard.md), which has **two layers**:
 
-## Activation — the project.yaml flag
+- **Baseline** — logging/error hygiene (structured logs, correct levels, no
+  swallowed errors) that `tdd` applies to **every** build, service or not,
+  regardless of the flag below. It's build discipline, not gated.
+- **Service standard** — RED metrics, OTLP export, tracing, SDK lifecycle. This is
+  what the flag gates.
 
-Everything here is **dormant** unless `project.yaml` carries:
+## Activation — the project.yaml flag (gates the service standard)
+
+The **Service standard** is **dormant** unless `project.yaml` carries:
 
 ```yaml
 observability:
@@ -25,21 +30,24 @@ observability:
 
 `enabled` is set during design (`grill-with-docs` / `to-prd`) once the project is
 known to ship a runtime service. A non-service project (CLI, IaC, docs, library)
-leaves it `false` and nothing below activates. Even when enabled, RED applies only
-to tasks that add request-serving paths — a task with no handler has nothing to
-enforce.
+leaves it `false` — it still gets the baseline, but none of the service standard
+below activates. Even when enabled, RED applies only to tasks that add
+request-serving paths — a task with no handler has nothing to enforce.
 
-## How the standard reaches each phase (when enabled)
+## How each layer reaches the phases
 
-Each phase skill loads `standard.md` **only when the flag is on** — the standard
-stays DRY (one source) and off the always-on context path.
+The **baseline** rides in `tdd`'s build discipline on every task — no flag, no file
+lookup required. The **service standard** activates only when the flag is on, and
+those phases load `standard.md` on demand (DRY, one source, off the always-on
+context path).
 
-| Phase | Reads standard.md to… |
-|-------|------------------------|
-| **grill-with-docs / to-prd** | surface SLOs and critical paths as design intent; set the flag |
-| **to-issues** | add observability acceptance criteria to service tasks (RED on new paths, structured logs w/ trace correlation, spans on downstream calls) |
-| **tdd / tdd-implementer** | build the instrumentation + its tests alongside the feature |
-| **/next post-build gate** | run `otel-observability-engineer` to verify the diff |
+| Phase | Layer | Behavior |
+|-------|-------|----------|
+| **tdd / tdd-implementer** | baseline | Always: structured logs, correct levels, no swallowed errors |
+| **grill-with-docs / to-prd** | service | Surface SLOs and critical paths; set the flag |
+| **to-issues** | service | Add observability acceptance criteria to service tasks (RED, trace-correlated logs, spans) |
+| **tdd / tdd-implementer** | service | Build the instrumentation + its tests when a criterion calls for it |
+| **/next post-build gate** | service | Run `otel-observability-engineer` to verify the diff |
 
 ## The gate
 
