@@ -14,7 +14,7 @@ Claude Code starts every session with a blank slate, and nothing holds it to you
 It creates a workspace with control files that hold project state *outside* the conversation, plus bundled skills, hooks, and agents that keep those files current and enforce discipline automatically. Four pillars:
 
 - **Durable memory** — `STATUS.md` (a ~500-token current-state synthesis Claude reads *first* every session), an append-only `journal.yaml`, a `CONTEXT.md` glossary, and ADRs for hard-to-reverse decisions. Re-orientation cost drops to near zero.
-- **An orchestrated, idea-to-ship pipeline** — the main session is an *orchestrator*, not the thing that types every line. `/next` reads the workspace state and dispatches the right phase (`grill-with-docs → to-prd → to-issues → tdd`), and the focused work is handed to short-lived sub-agents on fresh contexts and the right model tier: a Sonnet `tdd-implementer` runs the red-green-refactor loop while the orchestrator plans and reviews. You never have to remember which skill comes next.
+- **An orchestrated, idea-to-ship pipeline** — the main session is an *orchestrator*, not the thing that types every line. `/next` reads the workspace state and dispatches the right phase (`grill-with-docs → to-prd → to-issues → tdd`), and the focused work is handed to short-lived sub-agents on fresh contexts and the right model tier: a Sonnet `tdd-implementer` runs the red-green loop (refactoring at close-out) while the orchestrator plans and reviews. You never have to remember which skill comes next.
 - **Repo & worktree discipline** — the `repo` skill routes every repo/worktree operation through a generated `scripts/repo.sh`, blocks raw `git clone` / `worktree add`, and warns before you build on a stale worktree. Dependent slices can **stack** on an in-review branch so work never stalls.
 - **Independent review at two seams** — both reviews use a fresh agent that never saw the implementation. **Acceptance is checked right after the build, not at the PR:** the moment the `tdd-implementer` finishes, `/next` spawns an `implementation-validator` against the slice's acceptance criteria and **loops back to `tdd`** on a critical gap — the task never reaches `done` (or a PR) until it delivers what it promised. **Security is checked at the PR gate:** `pr-security-review` holds `gh pr create` until a `security-reviewer` signs off against bundled checklists.
 
@@ -131,7 +131,12 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/grill-with-docs` | Interviews you relentlessly to find holes in a rough idea; sharpens `CONTEXT.md`, offers ADRs |
 | `/to-prd` | Synthesizes the conversation into a structured PRD (Jira issue or `docs/plans/`) |
 | `/to-issues` | Breaks the PRD into vertical-slice issues marked AFK (autonomous) or HITL (needs a human) |
-| `/tdd` | Red-green-refactor, one test at a time; the build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent, then runs the post-build acceptance gate |
+| `/tdd` | Red-green loop, one test at a time (refactoring moves to close-out, checked by the acceptance gate); tests attach only at a **seam** named upstream in `to-prd`/`to-issues`. The build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent, then runs the post-build acceptance gate |
+| `/codebase-design` | Shared vocabulary for designing **deep modules** (Module/Interface/Depth/Seam/Adapter/…) plus the deletion test and a parallel-agent "design it twice" exploration. `tdd`, `code-review`, and `improve-codebase-architecture` draw their design language from it; pulled as a `/next` companion of `tdd` |
+| `/code-review` | Reviews the working diff across two axes — Standards (repo conventions + a code-smell baseline) and Spec (does it match the originating plan/issue) — via two parallel sub-agents. Correctness/standards only; security stays with `/pr-security-review`. Hand-invoked |
+| `/diagnosing-bugs` | A discipline for hard bugs: build a red-capable feedback loop *first*, then reproduce, form ranked hypotheses, instrument one variable at a time, and add a regression test at a real seam before the fix. Ships a HITL repro harness |
+| `/prototype` | Build throwaway code to answer a design question before committing — a portable pure-logic module behind a disposable TUI, or 3+ structurally-different UI variants on one route. The answer is captured as an ADR or folded into the PRD |
+| `/improve-codebase-architecture` | Scans for **deepening opportunities** (shallow → deep modules), renders a visual HTML report of candidates, then grills the chosen one and updates `CONTEXT.md`/ADRs. Uses the `codebase-design` vocabulary |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent security review before `gh pr create` (acceptance is validated earlier, by `/next`'s post-build gate) |
 | `/observability` | Shift-left observability. A **baseline** (structured logs, correct levels, no swallowed errors) applies to every build; a flag-gated **service standard** (RED metrics, OTel, tracing) enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (parallel to `implementation-validator`) |
@@ -140,7 +145,7 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/sync-status` | Regenerates `STATUS.md` from current state (mostly automatic via hooks) |
 | `/codebase-researcher` | Optional read-only codebase mapper; writes findings to `docs/research/` |
 
-> `/grill-with-docs`, `/to-prd`, `/to-issues`, and `/tdd` are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering).
+> `/grill-with-docs`, `/to-prd`, `/to-issues`, `/tdd`, `/codebase-design`, `/code-review`, `/diagnosing-bugs`, `/prototype`, and `/improve-codebase-architecture` are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering) (MIT) — see [CREDITS.md](CREDITS.md).
 
 ## Learn more
 
