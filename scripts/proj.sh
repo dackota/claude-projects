@@ -346,7 +346,7 @@ Append-only; never edit existing entries. Manual escape hatch:
 
 ```yaml
 - date: YYYY-MM-DD
-  type: decision   # decision | plan | started | done | blocker | supersession | research | pr | run
+  type: decision   # decision | plan | started | done | blocker | research | pr | run
   summary: <one or two sentences>
   refs: []         # optional paths or external IDs
   jira: PROJ-142  # optional
@@ -354,10 +354,9 @@ Append-only; never edit existing entries. Manual escape hatch:
 
 Append immediately when: a decision is made/reversed (`decision` — link the ADR
 if one was written) · a plan is finalized/revised (`plan`) · a task status flips
-(`started`/`done`) · a blocker is hit (`blocker`) · a doc is superseded
-(`supersession`) · research is finalized (`research`) · a PR is opened/merged/
-closed (`pr`) · a `/next` gate finishes (`run` — the pipeline audit trail; the
-`run-check.sh` hook nudges you).
+(`started`/`done`) · a blocker is hit (`blocker`) · research is finalized
+(`research`) · a PR is opened/merged/closed (`pr`) · a `/next` gate finishes
+(`run` — the pipeline audit trail; the `run-check.sh` hook nudges you).
 
 ## /sync-status
 

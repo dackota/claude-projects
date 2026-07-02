@@ -66,6 +66,7 @@ assert "CLAUDE.md references docs/adr/"       "$(grep -q 'docs/adr/' "$TARGET/CL
 assert "CLAUDE.md nudges PROJECT.md bootstrap" "$(grep -q 'Before anything else, check .PROJECT.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md drops docs/decisions"       "$(! grep -q 'docs/decisions' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: every-gated-slice validation" "$(grep -q 'Every gated slice' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: supersession type retired"    "$(! grep -q 'supersession' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
@@ -133,6 +134,19 @@ bash "$PROJ" update-skills --dir "$RT" >/dev/null
 bash "$PROJ" update-skills --dir "$RT" >/dev/null
 assert "idempotent: git-guard still single"         "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
 assert "idempotent: journal-check still single"     "$([[ "$(count_cmd journal-check)" == "1" ]] && echo true || echo false)"
+# update-skills must not nest a skill inside itself (.claude/skills/<x>/<x>/)
+NESTED=""
+for d in "$RT"/.claude/skills/*/; do
+  s="$(basename "$d")"
+  if [[ -d "${d}${s}" ]]; then NESTED+="$s "; fi
+done
+assert "idempotent: no nested skill doubling"       "$([[ -z "${NESTED// /}" ]] && echo true || echo false)"
+# run-check.sh must audit every post-build gate agent (the barrier's full set)
+RUNCHECK="$RT/.claude/skills/journal/hooks/run-check.sh"
+assert "run-check: correctness-reviewer in cases"   "$(grep -q 'correctness-reviewer' "$RUNCHECK" && echo true || echo false)"
+assert "run-check: runtime-validator in cases"      "$(grep -q 'runtime-validator' "$RUNCHECK" && echo true || echo false)"
+# supersession retired from the journal type enum table (kept only as a note)
+assert "journal skill: supersession off enum table" "$(! grep -qE '^\|[[:space:]]*.supersession. ' "$RT/.claude/skills/journal/SKILL.md" && echo true || echo false)"
 
 # ── repo.sh lifecycle against a throwaway remote ──────────────────────────────
 if command -v yq >/dev/null 2>&1; then

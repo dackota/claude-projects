@@ -1,6 +1,6 @@
 ---
 name: journal
-description: Append one typed entry to journal.yaml in a claude-projects workspace. Use when recording a significant project event — a decision, plan, task started/done, blocker, supersession, research, pr, or gate run.
+description: Append one typed entry to journal.yaml in a claude-projects workspace. Use when recording a significant project event — a decision, plan, task started/done, blocker, research, pr, or gate run.
 origin: claude-projects
 ---
 
@@ -30,12 +30,15 @@ Optional additional args (add as YAML fields if provided):
 | `started` | A task's status flipped to in-progress in `project.yaml` |
 | `done` | A task's status flipped to done in `project.yaml` |
 | `blocker` | A blocker was hit |
-| `supersession` | A doc's status was flipped to superseded |
 | `research` | A research doc was finalized |
 | `pr` | A PR was opened, merged, or closed |
 | `run` | A review/gate agent finished a run — the audit record for a `/next` pipeline gate (see below) |
 
 Rejects unknown types with a clear error listing the valid enum values.
+
+> **Retired:** `supersession` (a doc's status flipped to superseded) was in the enum
+> but went unused across every workspace, so it was removed. Record a supersession as
+> a `decision` entry with the superseded doc in `refs` instead.
 
 ## Entry schema written
 
