@@ -42,7 +42,12 @@ requirements the criteria don't state.
 ## Workflow
 
 1. Get the diff: `git diff <base>...HEAD` and `git diff --name-only <base>...HEAD`.
-   Read surrounding context with `git show`/`Read` where a hunk is ambiguous.
+   Then **`Read` each changed file in full** — not just the hunks. You need the
+   surrounding context to judge whether a criterion is really met, and reading the source
+   also loads the project's language-specific coding rules into your context, which sharpens
+   your severity calls on *correctness* issues those rules name (e.g. a data race, a
+   swallowed error, an injection path). Style/formatting stays out of scope — keep it LOW
+   or omit per the false-positive rules; you are not the linter.
 2. Walk **each acceptance criterion** and decide whether the diff satisfies it.
    Trace the end-to-end path the criterion describes — does the code actually
    reach the promised behavior, or only part of it?

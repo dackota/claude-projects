@@ -154,12 +154,18 @@ disposable. For each build:
    sub-agent with it folded into the criteria you pass. The build loop runs
    non-interactively once the input is in hand.
 3. Give the sub-agent the task's acceptance criteria (plus any gathered HITL input),
-   `CONTEXT.md` vocabulary, relevant ADRs, the working directory, and the test
-   command. It derives the plan and runs the red-green-refactor loop, returning a
-   `COMPLETE | PARTIAL | BLOCKED` summary. Review it (re-run the tests; check the
-   tests are behavioral, not implementation-coupled). On `BLOCKED` — a fork that
-   surfaced mid-build — gather any further input the user needs to settle it and
-   re-spawn. Do **not** flip the task `done` yet — the acceptance gate runs first.
+   `CONTEXT.md` vocabulary, relevant ADRs, **the applicable coding standards (general +
+   language-specific rules)**, the working directory, and the test command. It derives the
+   plan and runs the red-green-refactor loop, returning a `COMPLETE | PARTIAL | BLOCKED`
+   summary. Review it: re-run the tests; check the tests are behavioral, not
+   implementation-coupled; and **re-run the project's formatter + linter/vet over the
+   changed files** — the same `gofmt`/`go vet`/`golangci-lint`, `ruff`/`black`/`mypy` (etc.)
+   the implementer reported under **Format & lint**. A dirty formatter/linter is a `BLOCK`:
+   record it like a gate run (append a `type: run` journal entry with `agent: format-lint`
+   and its `verdict`, per the Audit step below) and re-spawn `tdd-implementer` to clean it
+   up, exactly as you would on a failed acceptance gate. On `BLOCKED` — a fork that surfaced
+   mid-build — gather any further input the user needs to settle it and re-spawn. Do **not**
+   flip the task `done` yet — the acceptance gate runs first.
 4. **Post-build acceptance gate (don't wait for the PR).** Once your own review of
    a `COMPLETE` summary is clean, **commit the slice** in the worktree, then spawn
    the `implementation-validator` (Agent tool, `subagent_type: implementation-validator`)

@@ -19,6 +19,11 @@
 #                      e.g. tdd,grill-with-docs) to restrict to a subset; bare
 #                      --skills is the same as the default (all skills).
 #   --no-skills        Opt out of bundling skills into the new project.
+#   --bundle-rules     Copy the coding rules bundled with claude-projects into the
+#                      project's .claude/rules/ so they travel with the repo. Off by
+#                      default — only needed for repos used on machines without your global
+#                      rules (teammates, CI, fresh clones); otherwise the global rules
+#                      already load and bundling would just duplicate them.  [scaffold only]
 #   --dry-run          Print what would be created/updated; write nothing
 #   --force            Overwrite if target directory already exists  [scaffold only]
 #   --show-claude-md   Print the embedded CLAUDE.md to stdout and exit
@@ -38,6 +43,8 @@ FORCE=false
 PROJECT_NAME=""
 COPY_SKILLS=true   # skills are bundled by default; opt out with --no-skills
 SKILLS_LIST=""  # empty = all bundled skills
+BUNDLE_RULES=false # coding rules are NOT bundled by default (global rules already load);
+                   # opt in with --bundle-rules for repos used without your global config
 SUBCOMMAND=""
 
 # Resolve script's real directory (handles symlinks on macOS)
@@ -50,6 +57,10 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$_SCRIPT")" && pwd)"
 SKILLS_SRC="${SCRIPT_DIR}/../skills"
 AGENTS_SRC="${SCRIPT_DIR}/../agents"
+# Coding rules are vendored in this repo (like skills/ and agents/) so --bundle-rules
+# works on any machine — a project used without the user's global config still gets its
+# standards. Keep this copy in sync with the canonical set in claude-config/rules.
+RULES_SRC="${SCRIPT_DIR}/../rules"
 
 # ── colours ──────────────────────────────────────────────────────────────────
 GREEN="\033[0;32m"
@@ -236,6 +247,10 @@ that holds it (the *where*).
 - `docs/plans/` — planning documents (and local PRDs when not using a tracker)
 - `docs/adr/` — architectural decision records (see Documentation rules)
 - `docs/research/`, `docs/validations/` — research, and completion evidence
+- **Coding standards** — general conventions plus language-specific rules (Go, Python, …).
+  Follow them when writing or reviewing code; they load into context automatically (language
+  rules apply to the files you touch). Bundled under `.claude/rules/` when scaffolded with
+  `--bundle-rules`; otherwise they come from your global config.
 - `scripts/` — one-off scripts not belonging to a specific repo
 - `repos/`, `worktrees/` — cloned repos and task worktrees, **managed only via
   `scripts/repo.sh`** (see below). Both are `.gitignore`-excluded; repos are
@@ -383,6 +398,7 @@ while [[ $# -gt 0 ]]; do
     --dir)             [[ $# -lt 2 ]] && die "--dir requires an argument"; BASE_DIR="$2"; shift 2 ;;
     --jira)            [[ $# -lt 2 ]] && die "--jira requires an argument"; JIRA_KEY="$2"; shift 2 ;;
     --no-skills)       COPY_SKILLS=false; shift ;;
+    --bundle-rules)    BUNDLE_RULES=true; shift ;;
     --skills)
       COPY_SKILLS=true
       # optional next arg: comma-separated skill names (not starting with -)
@@ -637,6 +653,25 @@ if $COPY_SKILLS; then
       # Idempotent merge, so it composes cleanly when several are copied.
       post_install_skill "$TARGET" "$skill"
     done
+  fi
+fi
+
+# ── coding rules (opt-in via --bundle-rules) ────────────────────────────────────
+# NOT bundled by default: your global ~/.claude/rules already loads for every project,
+# so copying them here would just duplicate them in context. Opt in only for repos that
+# run where the global rules aren't present (teammates, CI, fresh clones); native Claude
+# Code loads project-level .claude/rules/ the same way.
+if $BUNDLE_RULES; then
+  if [[ -d "$RULES_SRC" ]]; then
+    if $DRY_RUN; then
+      echo "  [rules] .claude/rules/"
+    else
+      mkdir -p "${TARGET}/.claude/rules"
+      cp -R "$RULES_SRC"/. "${TARGET}/.claude/rules/"
+    fi
+  else
+    warn "--bundle-rules given but the bundled rules are missing at $RULES_SRC."
+    warn "Your claude-projects checkout looks incomplete — restore rules/ and re-run."
   fi
 fi
 
