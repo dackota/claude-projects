@@ -56,6 +56,14 @@ proj <name>                     # scaffold + bundle all skills (default)
 proj <name> --no-skills         # scaffold without bundling skills
 proj <name> --skills tdd,grill-with-docs  # scaffold + bundle a specific subset
 proj <name> --jira KEY          # include Jira key in project.yaml
+proj <name> --bundle-rules      # also vendor coding rules into .claude/rules/
+proj <name> --force             # overwrite an existing target directory
+proj <name> --dir <path>        # base directory (default: current directory)
 proj --dry-run <name>           # preview without writing
 proj --show-claude-md           # print the embedded CLAUDE.md template
+
+# update-skills: re-sync already-bundled skills into an existing workspace
+proj update-skills [<name>]     # update every installed skill (cwd/--dir if <name> omitted)
+proj update-skills --skills tdd,next  # restrict to a subset (no transitive deps)
+proj update-skills --dry-run    # preview the update
 ```

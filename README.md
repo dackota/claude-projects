@@ -85,25 +85,39 @@ Skills are **bundled by default** — every `proj <name>` copies them into the w
 ## Usage
 
 ```bash
-proj <project-name> [options]
+proj <project-name> [options]                 # scaffold a new workspace (default)
+proj update-skills [<project-name>] [options] # re-sync bundled skills in an existing one
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--dir <path>` | Base directory (default: current directory) |
-| `--jira <KEY>` | Jira project key, e.g. `AIDP` |
-| `--skills [LIST]` | Bundle only a comma-separated subset (default: all) |
-| `--no-skills` | Don't bundle skills into the new project |
-| `--dry-run` | Print what would be created without writing |
-| `--force` | Overwrite if the target directory exists |
-| `--show-claude-md` | Print the embedded CLAUDE.md template |
-| `-h, --help` | Show help |
+| Flag | Description | Applies to |
+|------|-------------|------------|
+| `--dir <path>` | Base directory (default: current directory) | both |
+| `--jira <KEY>` | Jira project key, e.g. `AIDP` | scaffold |
+| `--skills [LIST]` | Bundle only a comma-separated subset (bare `--skills` = all) | both |
+| `--no-skills` | Don't bundle skills into the new project | scaffold |
+| `--bundle-rules` | Copy the coding rules into `.claude/rules/` so they travel with the repo (off by default — global rules already load; opt in for teammates, CI, or fresh clones) | scaffold |
+| `--dry-run` | Print what would be created/updated without writing | both |
+| `--force` | Overwrite if the target directory exists | scaffold |
+| `--show-claude-md` | Print the embedded CLAUDE.md template and exit | — |
+| `-h, --help` | Show help | — |
 
 ```bash
 proj my-feature-work                                    # all skills bundled
 proj aidp-migration --dir ~/Documents/repos --jira AIDP
 proj minimal --no-skills                                # scaffold without skills
 proj spike --skills tdd,grill-with-docs                 # bundle a subset
+proj portable --bundle-rules                            # vendor coding rules into the repo
+proj --dry-run my-feature                               # preview without writing
+```
+
+### `update-skills`
+
+Re-sync already-bundled skills from this repo into an existing workspace to pick up the latest changes — hooks are re-wired and companion files (e.g. `scripts/repo.sh`) reinstalled idempotently. `<project-name>` is optional; when omitted, the current directory (or `--dir`) is treated as the project root. Only skills already present in `.claude/skills/` are updated; pass `--skills LIST` to restrict which ones. Unlike scaffolding, it does **not** pull in transitive dependencies — an explicit list is honored verbatim.
+
+```bash
+cd my-feature-work && proj update-skills                # update every installed skill
+proj update-skills my-feature-work --dir ~/Documents/repos/projects
+proj update-skills --skills tdd,next --dry-run          # preview a subset update
 ```
 
 ## Scaffolded structure
@@ -115,10 +129,11 @@ proj spike --skills tdd,grill-with-docs                 # bundle a subset
 ├── STATUS.md          # ~500-token current-state synthesis (read first each session)
 ├── CONTEXT.md         # domain glossary (canonical terms)
 ├── journal.yaml       # append-only structured event log
-├── project.yaml       # source of truth: repos, tasks, Jira key
+├── project.yaml       # source of truth: repos, tasks, Jira key, observability + validation config
 ├── .claude/
 │   ├── skills/        # bundled skills (default; --no-skills to opt out)
 │   ├── agents/        # bundled agents (tdd-implementer, implementation-validator, correctness-reviewer, runtime-validator, otel-observability-engineer, security-reviewer)
+│   ├── rules/         # coding rules (only when scaffolded with --bundle-rules)
 │   └── settings.json  # auto-wired hooks (journal, sync-status, repo, pr-security-review)
 ├── docs/              # plans/, adr/, research/, validations/
 ├── scripts/           # repo.sh (when the repo skill is bundled) + one-off scripts
@@ -144,6 +159,8 @@ Bundled into every workspace by default. `/next` orchestrates them, but each sta
 | `/improve-codebase-architecture` | Scans for **deepening opportunities** (shallow → deep modules), renders a visual HTML report of candidates, then grills the chosen one and updates `CONTEXT.md`/ADRs. Uses the `codebase-design` vocabulary |
 | `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
 | `/pr-security-review` | Independent security review before `gh pr create`, appending its section to the slice's validation record (acceptance, correctness, and runtime are validated earlier, by `/next`'s post-build barrier) |
+| `/security-review` | App-code security checklist (OWASP Top 10, secrets, authn/z, injection, XSS/CSRF, rate limiting, data exposure) — the checklist the PR gate's `security-reviewer` runs; also hand-invokable |
+| `/cloud-infra-security` | Cloud/IaC security checklist (IAM, network, secrets, logging, CI/CD, CDN/WAF, backups) — used when the diff touches infrastructure |
 | `/observability` | Shift-left observability. A **baseline** (structured logs, correct levels, no swallowed errors) applies to every build; a flag-gated **service standard** (RED metrics, OTel, tracing) enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (in the post-build barrier, parallel to the acceptance/correctness/runtime gates) |
 | `/agent-controls` | The standard for human-agent systems under control — permissions, verification, approval, audit, secret handling, recovery, ownership — as a per-agent **operating contract**. Applied inward now: every bundled agent carries a `contract:` block (`test-proj.sh` checks it); the deliverable-facing gated layer is documented for when a project ships its own agent system |
 | `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks); the `run` type records each gate run as the pipeline audit trail |
