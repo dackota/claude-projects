@@ -74,6 +74,23 @@ features for future slices), not less.
   `.claude/skills/observability/standard.md` and build that instrumentation **and
   its tests** in the same red-green loop — a request path arrives observable, not
   instrumented later.
+- **Harden by default (baseline — always).** For any code that handles input, I/O, or
+  requests, build the common hardening defaults in from the start — don't wait for a
+  gate to ask:
+  - **Errors** never leak internals (stack traces, secrets, SQL) across a trust
+    boundary — return a generic message, log the detail.
+  - **I/O** sets timeouts (read/write/idle) and bounded retries — no unbounded waits.
+  - **HTTP responses** set the standard security headers the framework expects.
+  - **Input** is validated and bounded — length/size/range checks; guard against
+    overflow and unbounded allocation.
+  - **SQL / shelled-out commands** are parameterized, never string-concatenated.
+  - **Resources** are bounded and released — connection/goroutine/handle limits, and
+    close what you open.
+
+  When the orchestrator passes the project's **security-posture list** (from
+  `STATUS.md`), treat those project-specific items as part of this baseline too. This
+  is *not* the security review (that runs at the PR gate) — it is building the obvious
+  hardening in so the review finds less.
 - Prefer **deep modules** — small interface, substantial implementation behind it
   (see the `codebase-design` skill: `.claude/skills/codebase-design/SKILL.md` and
   `.claude/skills/codebase-design/INTERFACE-DESIGN.md`).

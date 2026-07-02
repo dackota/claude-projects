@@ -60,7 +60,20 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Publish the approved slices
+### 5. Coverage map — assert every requirement is owned
+
+Before publishing, build a **coverage map**: a table pairing each PRD requirement /
+user story with the slice(s) that own it. Then **assert every requirement is owned by
+at least one slice.** If any requirement has no owner, stop — add a slice that owns it,
+fold it into an existing slice, or record it explicitly as out of scope with the user's
+agreement. Never publish with an unowned requirement: a requirement no slice owns is the
+failure class where a feature reaches production because nothing was responsible for
+building it — it passes every gate because no gate owned it either.
+
+Present the map as `requirement / user story → owning slice(s)`, and surface any
+requirement that came out unowned so it is resolved before publish.
+
+### 6. Publish the approved slices
 
 Where the slices land is driven by `project.yaml`:
 
