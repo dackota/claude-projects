@@ -77,6 +77,15 @@ and the gate honors a recorded verdict over any skip rule.
    feeds `STATUS.md`'s **Pipeline health**. The `run-check.sh` hook nudges you.
 
 5. **Act on the verdict.**
+
+   > **Record first, then create — as two separate Bash calls.** The gate is a
+   > PreToolUse hook that inspects the `gh pr create` command string *before* the
+   > command runs. A verdict written in the *same* command (`… > "$verdict_file" &&
+   > gh pr create …`, or a `scripts/repo.sh pr` chained after the write) has not
+   > landed on disk when the hook fires, so the gate still sees no verdict and
+   > blocks. Let the step-4 write complete in its own call, then create the PR in
+   > the next call.
+
    - **BLOCK (any CRITICAL):** Do NOT open the PR. Report the CRITICAL findings and
      fix them. Each fix is a new commit → a new `HEAD` → re-run this skill on the
      new SHA.
