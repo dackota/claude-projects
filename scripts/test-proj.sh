@@ -416,6 +416,11 @@ assert "tdd-implementer: hardening baseline (dec 9)" "$(grep -q 'Harden by defau
 assert "next: passes security-posture (dec 9)"      "$(grep -q 'security-posture' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "next: formatter spot-verify (dec 9)"        "$(grep -q 'spot-verify' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "to-issues: coverage-map ownership (dec 10)" "$(grep -q 'Coverage map' "$NT/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
+# Slice E — release-verify (Land-phase live verification, decision 2)
+assert "next: RELEASE-VERIFY.md installed"          "$([[ -f $NT/.claude/skills/next/RELEASE-VERIFY.md ]] && echo true || echo false)"
+assert "next: Land references release-verify"       "$(grep -q 'RELEASE-VERIFY.md' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+assert "runtime-validator: release mode"            "$(grep -q 'Release mode' "$NT/.claude/agents/runtime-validator.md" && echo true || echo false)"
+assert "runtime-validator: live read-only, no deploy" "$(grep -q 'mutate any live/shared environment' "$NT/.claude/agents/runtime-validator.md" && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"

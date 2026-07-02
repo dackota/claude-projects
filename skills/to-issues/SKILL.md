@@ -124,6 +124,8 @@ For the local path, append a thin task entry per slice:
   blocked_by: []                   # task ids that must finish first
   plan: docs/plans/<slug>-prd.md   # the source PRD/plan
   jira: null
+  # release: true                  # optional — marks a release/deploy task so /next's
+  #                                #   Land phase runs release-verify (see the next skill)
 </task-schema>
 
 Do NOT close or modify any parent issue.
