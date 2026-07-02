@@ -66,6 +66,7 @@ assert "CLAUDE.md references docs/adr/"       "$(grep -q 'docs/adr/' "$TARGET/CL
 assert "CLAUDE.md nudges PROJECT.md bootstrap" "$(grep -q 'Before anything else, check .PROJECT.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md drops docs/decisions"       "$(! grep -q 'docs/decisions' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: every-gated-slice validation" "$(grep -q 'Every gated slice' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
 assert "STATUS.md has last_synced: null"      "$(grep -q 'last_synced: null' "$TARGET/STATUS.md" && echo true || echo false)"
@@ -256,6 +257,7 @@ assert "pr-review: bundled security-review skill"   "$([[ -d $RT/.claude/skills/
 assert "pr-review: bundled cloud-infra skill"       "$([[ -d $RT/.claude/skills/cloud-infra-security ]] && echo true || echo false)"
 assert "pr-review: agent copied to .claude/agents"  "$([[ -f $RT/.claude/agents/security-reviewer.md ]] && echo true || echo false)"
 assert "pr-review: pr-gate hook wired in settings"  "$([[ "$(count_cmd pr-gate)" == "1" ]] && echo true || echo false)"
+assert "pr-review: SKILL warns record-then-create"  "$(grep -q 'two separate Bash calls' "$RT/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
 
 CLASSIFY="$RT/.claude/skills/pr-security-review/classify.sh"
 PR_GATE="$RT/.claude/skills/pr-security-review/hooks/pr-gate.sh"

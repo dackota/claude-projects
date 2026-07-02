@@ -297,6 +297,14 @@ Each review agent carries a declared **operating contract** (permitted evidence,
 tool scope, approval rule, required check, fallback) and records a `run` journal
 entry per gate — the `agent-controls` skill is the standard.
 
+**PreToolUse gates read the command before it runs — write, then act.** When a
+hook gates an action on a file a *prior* step must produce (e.g. the PR gate reads
+a security verdict under `.git/`), never chain the write and the gated action in
+one Bash call (`… > file && gh pr create …`, or a write piped/`;`-joined ahead of
+the gated command). The hook inspects the command string *before* it executes, so
+the file it needs has not landed yet and the gate blocks. Run the write as its own
+Bash call, let it finish, then run the gated action in the next call.
+
 ## Documentation rules
 
 All artifacts are Markdown with dash-separated file names. Every doc in
