@@ -111,7 +111,9 @@ wire_skill_hooks() {
   [[ -f "$settings" ]] || echo '{}' > "$settings"
   case "$skill" in
     journal)
-      add_hook "$settings" PostToolUse "Write|Edit" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-check.sh' true "Journal entry may be needed"
+      # No per-write (Write|Edit) rewake: the Stop-time journal-stop.sh net below
+      # catches unlogged doc changes before the session ends, without spending an
+      # extra model turn on every mandated bookkeeping write.
       add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-stop.sh' true "Unlogged journal events detected"
       # After a review/gate sub-agent (Task) finishes, nudge a `run` audit entry.
       add_hook "$settings" PostToolUse "Task" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/run-check.sh' true "Gate run needs a journal entry"

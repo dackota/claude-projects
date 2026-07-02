@@ -123,7 +123,9 @@ count_cmd() { jq "[.. | objects | select(has(\"command\")) | select(.command|tes
 assert "settings: PreToolUse git-guard wired"       "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
 assert "settings: PreToolUse repo-stale wired"      "$([[ "$(count_cmd 'repo-stale\\.sh')" == "1" ]] && echo true || echo false)"
 assert "settings: Stop repo-stale-stop NOT wired"   "$([[ "$(count_cmd repo-stale-stop)" == "0" ]] && echo true || echo false)"
-assert "settings: journal hooks preserved"          "$([[ "$(count_cmd journal-check)" == "1" ]] && echo true || echo false)"
+assert "settings: journal-check per-write dropped"  "$([[ "$(count_cmd journal-check)" == "0" ]] && echo true || echo false)"
+assert "settings: journal-stop net wired"           "$([[ "$(count_cmd journal-stop)" == "1" ]] && echo true || echo false)"
+assert "settings: run-check Task hook wired"         "$([[ "$(count_cmd run-check)" == "1" ]] && echo true || echo false)"
 assert "settings: sync-status hook preserved"       "$([[ "$(count_cmd sync-status-stop)" == "1" ]] && echo true || echo false)"
 # All Stop hooks (journal, sync-status) share one matcher group
 STOP_GROUPS="$(jq '[.hooks.Stop[] | select(.matcher=="")] | length' "$SETTINGS")"
@@ -133,7 +135,8 @@ assert "settings: single Stop matcher group"        "$([[ "$STOP_GROUPS" == "1" 
 bash "$PROJ" update-skills --dir "$RT" >/dev/null
 bash "$PROJ" update-skills --dir "$RT" >/dev/null
 assert "idempotent: git-guard still single"         "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
-assert "idempotent: journal-check still single"     "$([[ "$(count_cmd journal-check)" == "1" ]] && echo true || echo false)"
+assert "idempotent: journal-stop still single"      "$([[ "$(count_cmd journal-stop)" == "1" ]] && echo true || echo false)"
+assert "idempotent: no per-write journal-check"     "$([[ "$(count_cmd journal-check)" == "0" ]] && echo true || echo false)"
 # update-skills must not nest a skill inside itself (.claude/skills/<x>/<x>/)
 NESTED=""
 for d in "$RT"/.claude/skills/*/; do
