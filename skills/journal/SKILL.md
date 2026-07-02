@@ -36,10 +36,6 @@ Optional additional args (add as YAML fields if provided):
 
 Rejects unknown types with a clear error listing the valid enum values.
 
-> **Retired:** `supersession` (a doc's status flipped to superseded) was in the enum
-> but went unused across every workspace, so it was removed. Record a supersession as
-> a `decision` entry with the superseded doc in `refs` instead.
-
 ## Entry schema written
 
 ```yaml
