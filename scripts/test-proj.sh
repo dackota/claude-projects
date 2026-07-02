@@ -67,6 +67,7 @@ assert "CLAUDE.md nudges PROJECT.md bootstrap" "$(grep -q 'Before anything else,
 assert "CLAUDE.md drops docs/decisions"       "$(! grep -q 'docs/decisions' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: every-gated-slice validation" "$(grep -q 'Every gated slice' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: supersession type retired"    "$(! grep -q 'supersession' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: points to canonical BARRIER.md" "$(grep -q 'BARRIER.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
@@ -123,7 +124,9 @@ count_cmd() { jq "[.. | objects | select(has(\"command\")) | select(.command|tes
 assert "settings: PreToolUse git-guard wired"       "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
 assert "settings: PreToolUse repo-stale wired"      "$([[ "$(count_cmd 'repo-stale\\.sh')" == "1" ]] && echo true || echo false)"
 assert "settings: Stop repo-stale-stop NOT wired"   "$([[ "$(count_cmd repo-stale-stop)" == "0" ]] && echo true || echo false)"
-assert "settings: journal hooks preserved"          "$([[ "$(count_cmd journal-check)" == "1" ]] && echo true || echo false)"
+assert "settings: journal-check per-write dropped"  "$([[ "$(count_cmd journal-check)" == "0" ]] && echo true || echo false)"
+assert "settings: journal-stop net wired"           "$([[ "$(count_cmd journal-stop)" == "1" ]] && echo true || echo false)"
+assert "settings: run-check Task hook wired"         "$([[ "$(count_cmd run-check)" == "1" ]] && echo true || echo false)"
 assert "settings: sync-status hook preserved"       "$([[ "$(count_cmd sync-status-stop)" == "1" ]] && echo true || echo false)"
 # All Stop hooks (journal, sync-status) share one matcher group
 STOP_GROUPS="$(jq '[.hooks.Stop[] | select(.matcher=="")] | length' "$SETTINGS")"
@@ -133,7 +136,10 @@ assert "settings: single Stop matcher group"        "$([[ "$STOP_GROUPS" == "1" 
 bash "$PROJ" update-skills --dir "$RT" >/dev/null
 bash "$PROJ" update-skills --dir "$RT" >/dev/null
 assert "idempotent: git-guard still single"         "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
-assert "idempotent: journal-check still single"     "$([[ "$(count_cmd journal-check)" == "1" ]] && echo true || echo false)"
+assert "idempotent: journal-stop still single"      "$([[ "$(count_cmd journal-stop)" == "1" ]] && echo true || echo false)"
+assert "idempotent: no per-write journal-check"     "$([[ "$(count_cmd journal-check)" == "0" ]] && echo true || echo false)"
+# sync-status enforces the STATUS.md 500-token cap (Slice B, decision 8)
+assert "sync-status: 500-token cap enforced"        "$(grep -q '500 tokens' "$RT/.claude/skills/sync-status/SKILL.md" && echo true || echo false)"
 # update-skills must not nest a skill inside itself (.claude/skills/<x>/<x>/)
 NESTED=""
 for d in "$RT"/.claude/skills/*/; do
@@ -272,6 +278,7 @@ assert "pr-review: bundled cloud-infra skill"       "$([[ -d $RT/.claude/skills/
 assert "pr-review: agent copied to .claude/agents"  "$([[ -f $RT/.claude/agents/security-reviewer.md ]] && echo true || echo false)"
 assert "pr-review: pr-gate hook wired in settings"  "$([[ "$(count_cmd pr-gate)" == "1" ]] && echo true || echo false)"
 assert "pr-review: SKILL warns record-then-create"  "$(grep -q 'two separate Bash calls' "$RT/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
+assert "pr-review: SKILL documents surface-skip"    "$(grep -q 'trust-boundary surface' "$RT/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
 
 CLASSIFY="$RT/.claude/skills/pr-security-review/classify.sh"
 PR_GATE="$RT/.claude/skills/pr-security-review/hooks/pr-gate.sh"
@@ -303,7 +310,13 @@ git -C "$CLS" checkout -q -b docs-only main
 echo "notes" > "$CLS/NOTES.md"; git -C "$CLS" add -A; git -C "$CLS" commit -qm docs
 assert "classify: docs only -> none"                "$([[ -z "$(classify)" ]] && echo true || echo false)"
 
-# ── pr-gate.sh: gates gh pr create (size-aware + verdict-honoring) ────────────
+git -C "$CLS" checkout -q -b surface-code main
+printf 'import requests\ndef f(u):\n    return requests.get(u)\n' > "$CLS/net.py"
+git -C "$CLS" add -A; git -C "$CLS" commit -qm net
+assert "classify: trust-boundary code -> surface"   "$(case " $(classify) " in *" surface "*) echo true ;; *) echo false ;; esac)"
+assert "classify: pure code has no surface"         "$(git -C "$CLS" checkout -q code-only; case " $(classify) " in *" surface "*) echo false ;; *) echo true ;; esac)"
+
+# ── pr-gate.sh: gates gh pr create (surface-aware + verdict-honoring) ─────────
 # Give the local repo an origin/main ref so the hook can resolve a base.
 git -C "$CLS" update-ref refs/remotes/origin/main "$(git -C "$CLS" rev-parse main)"
 git -C "$CLS" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -315,38 +328,44 @@ prgate() { # prgate <command> -> exit code (cwd = current branch in $CLS)
 }
 sha_of() { git -C "$CLS" rev-parse HEAD; }
 
-# Branches of varying size/dimension off main.
+# Branches off main. Decision 4: the security skip keys on the trust boundary the diff
+# touches ("surface"), not size — a pure-logic module skips at any size, a code diff
+# touching I/O/exec/env/secrets is reviewed at any size, and infra is always reviewed.
 git -C "$CLS" checkout -q -b small-code main
 printf 'print(1)\nprint(2)\n' > "$CLS/tiny.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm tiny
 git -C "$CLS" checkout -q -b big-code main
-{ for i in $(seq 1 40); do echo "line $i"; done; } > "$CLS/big.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm big
+{ for i in $(seq 1 40); do echo "value_$i = $i"; done; } > "$CLS/big.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm big
+git -C "$CLS" checkout -q -b surface-gate main
+printf 'import requests\ndef f(u):\n    return requests.get(u)\n' > "$CLS/call.py"; git -C "$CLS" add -A; git -C "$CLS" commit -qm surf
 git -C "$CLS" checkout -q -b tiny-infra main
 printf 'x = 1\n' > "$CLS/one.tf"; git -C "$CLS" add -A; git -C "$CLS" commit -qm onetf
 
 rm -rf "$VERDICT_DIR"
 git -C "$CLS" checkout -q small-code
-assert "gate: skips small code-only diff"           "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+assert "gate: skips small pure-code diff"           "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
 git -C "$CLS" checkout -q big-code
-assert "gate: blocks large code diff (no verdict)"  "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+assert "gate: skips large PURE code diff (dec 4)"   "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+git -C "$CLS" checkout -q surface-gate
+assert "gate: blocks code touching trust boundary"  "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
 git -C "$CLS" checkout -q tiny-infra
 assert "gate: blocks tiny infra diff (no verdict)"  "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
 git -C "$CLS" checkout -q docs-only
 assert "gate: skips docs-only diff"                 "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
 
-# A recorded verdict is honored regardless of size/dimension.
+# A recorded verdict is honored regardless of dimension.
 mkdir -p "$VERDICT_DIR"
-git -C "$CLS" checkout -q big-code
+git -C "$CLS" checkout -q surface-gate
 printf 'PASS\nCRITICAL:0 HIGH:1\n' > "$VERDICT_DIR/$(sha_of)"
-assert "gate: PASS verdict allows large diff"       "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+assert "gate: PASS verdict allows surface diff"     "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
 git -C "$CLS" checkout -q small-code
 printf 'BLOCK\nCRITICAL:1\n' > "$VERDICT_DIR/$(sha_of)"
-assert "gate: BLOCK verdict blocks small diff"      "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+assert "gate: BLOCK verdict blocks pure diff"       "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
 
-# Env override raises the small-code threshold so a larger diff skips.
+# Marker override: force a pure diff to register a surface -> reviewed.
 git -C "$CLS" checkout -q big-code; rm -f "$VERDICT_DIR/$(sha_of)"
-export PR_SECURITY_MAX_SMALL_LINES=999
-assert "gate: PR_SECURITY_MAX_SMALL_LINES override" "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
-unset PR_SECURITY_MAX_SMALL_LINES
+export PR_SECURITY_SURFACE_MARKERS='value_'
+assert "gate: PR_SECURITY_SURFACE_MARKERS override" "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+unset PR_SECURITY_SURFACE_MARKERS
 
 assert "gate: ignores non-create gh (pr list)"      "$([[ "$(prgate 'gh pr list')" == "0" ]] && echo true || echo false)"
 assert "gate: ignores non-gh commands"              "$([[ "$(prgate 'git status')" == "0" ]] && echo true || echo false)"
@@ -381,7 +400,11 @@ assert "next: companion codebase-design pulled"     "$([[ -d $NT/.claude/skills/
 assert "next: tdd-implementer agent wired"          "$([[ -f $NT/.claude/agents/tdd-implementer.md ]] && echo true || echo false)"
 assert "next: implementation-validator agent wired" "$([[ -f $NT/.claude/agents/implementation-validator.md ]] && echo true || echo false)"
 assert "next: correctness-reviewer agent wired"     "$([[ -f $NT/.claude/agents/correctness-reviewer.md ]] && echo true || echo false)"
+assert "correctness: security-obligations ledger"   "$(grep -q 'Security obligations for future callers' "$NT/.claude/agents/correctness-reviewer.md" && echo true || echo false)"
 assert "next: runtime-validator agent wired"        "$([[ -f $NT/.claude/agents/runtime-validator.md ]] && echo true || echo false)"
+assert "next: BARRIER.md reference doc installed"   "$([[ -f $NT/.claude/skills/next/BARRIER.md ]] && echo true || echo false)"
+assert "next: SKILL points to canonical BARRIER"    "$(grep -q 'BARRIER.md' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+assert "next: SKILL reads journal tail (dec 6)"     "$(grep -q 'last ~15 entries' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"

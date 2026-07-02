@@ -33,9 +33,12 @@ verdict exists for the current `HEAD` commit. This skill produces that verdict.
 ## When the gate requires a review
 
 With no recorded verdict for `HEAD`, the gate requires a security review when the
-diff touches **infra** files (any size) or is a **code change larger than
-`PR_SECURITY_MAX_SMALL_LINES` lines** (default 25). Small code-only and
-docs/config-only diffs skip automatically.
+diff touches **infra** files (any size) or a **trust-boundary surface** in the code
+(network, DB/SQL, exec, env, file I/O, templates, or secrets/crypto — any size). A
+**pure-logic** code change (no such surface) and docs/config-only diffs skip
+automatically; the trust-boundary marker set is tunable via
+`PR_SECURITY_SURFACE_MARKERS`. When a pure module skips, the `correctness-reviewer`
+still records the security obligations it imposes on its callers, so nothing is lost.
 
 Running this skill by hand always works regardless of size — it records a verdict,
 and the gate honors a recorded verdict over any skip rule.
@@ -53,9 +56,11 @@ and the gate honors a recorded verdict over any skip rule.
    ```
    bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/classify.sh "$BASE"
    ```
-   It prints `code`, `infra`, both, or nothing (`code → security-review`,
-   `infra → cloud-infra-security`). If it prints nothing, the review is a trivial
-   PASS — skip the agent and record a PASS verdict.
+   It prints any of `code`, `infra`, `surface`, or nothing — `code`/`surface` →
+   security-review checklist, `infra` → cloud-infra-security checklist, and `surface`
+   flags that the code diff touches a trust boundary. If it prints nothing
+   (docs/config only), the review is a trivial PASS — skip the agent and record a
+   PASS verdict.
 
 3. **Security review.** Launch the `security-reviewer` agent (Agent tool,
    `subagent_type: security-reviewer`) with a fresh context, given only the diff

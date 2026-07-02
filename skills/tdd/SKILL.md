@@ -179,14 +179,13 @@ Then:
 - Write the **validation record** to `docs/validations/<task>.md` (workspace lifecycle frontmatter) with the evidence — commands run, `path:line`, test output — and reference it from the `done` journal entry. In inline mode you are the reviewer, so this is your own close-out evidence; in `/next` subagent mode the orchestrator writes it from the gates' output instead (see below).
 
 In subagent mode (`/next`), an **independent post-build barrier** runs immediately
-after this loop — `/next` commits the slice and spawns, in parallel, a fresh
-`implementation-validator` (acceptance criteria, including the refactor pass above)
-and a fresh `correctness-reviewer` (diff-introduced correctness bugs) before the
-task is marked done, then writes the slice's validation record from their evidence;
-a `BLOCK` from either loops straight back here. In inline mode there is no auto-gate
-(you're watching live) — close-out here is your own confidence that the slice is
-done; run `/pr-security-review` by hand if you want an independent pass. Either way,
-security is reviewed later at the PR gate.
+after this loop and gates the task before it is marked done; a `BLOCK` from any gate
+loops straight back here. Its full protocol — which gates run, verdicts, loop-back, and
+the validation record — is the `next` skill's **BARRIER.md** (the single normative
+home; not restated here). In inline mode there is no auto-gate (you're watching live) —
+close-out here is your own confidence that the slice is done; run `/pr-security-review`
+by hand if you want an independent pass. Either way, security is reviewed later at the
+PR gate.
 
 ## Checklist Per Cycle
 
