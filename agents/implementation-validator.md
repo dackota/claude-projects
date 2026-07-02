@@ -42,7 +42,9 @@ requirements the criteria don't state.
 ## Workflow
 
 1. Get the diff: `git diff <base>...HEAD` and `git diff --name-only <base>...HEAD`.
-   Then **`Read` each changed file in full** — not just the hunks. You need the
+   Then **`Read` each changed file in full** — not just the hunks, and **by the
+   repo-relative path** `git diff --name-only` gave you (path-scoped language rules load on
+   in-workspace relative reads, not on absolute paths outside the tree). You need the
    surrounding context to judge whether a criterion is really met, and reading the source
    also loads the project's language-specific coding rules into your context, which sharpens
    your severity calls on *correctness* issues those rules name (e.g. a data race, a
