@@ -163,17 +163,19 @@ disposable. For each build:
    non-interactively once the input is in hand.
 3. Give the sub-agent the task's acceptance criteria (plus any gathered HITL input),
    `CONTEXT.md` vocabulary, relevant ADRs, **the applicable coding standards (general +
-   language-specific rules)**, the working directory, and the test command. It derives the
-   plan and runs the red-green-refactor loop, returning a `COMPLETE | PARTIAL | BLOCKED`
-   summary. Review it: re-run the tests; check the tests are behavioral, not
-   implementation-coupled; and **re-run the project's formatter + linter/vet over the
-   changed files** — the same `gofmt`/`go vet`/`golangci-lint`, `ruff`/`black`/`mypy` (etc.)
-   the implementer reported under **Format & lint**. A dirty formatter/linter is a `BLOCK`:
-   record it like a gate run (append a `type: run` journal entry with `agent: format-lint`
-   and its `verdict`, per the Audit step below) and re-spawn `tdd-implementer` to clean it
-   up, exactly as you would on a failed acceptance gate. On `BLOCKED` — a fork that surfaced
-   mid-build — gather any further input the user needs to settle it and re-spawn. Do **not**
-   flip the task `done` yet — the acceptance gate runs first.
+   language-specific rules)**, **the project's security-posture list from `STATUS.md`**
+   (so project-specific hardening reaches the build), the working directory, and the
+   test command. It derives the plan and runs the red-green-refactor loop, returning a
+   `COMPLETE | PARTIAL | BLOCKED` summary. Review it: re-run the tests; check the tests
+   are behavioral, not implementation-coupled; and **spot-verify the implementer's
+   formatter/linter result** — it runs `gofmt`/`go vet`/`golangci-lint`,
+   `ruff`/`black`/`mypy` (etc.) at close-out and reports clean under **Format & lint**,
+   so confirm rather than re-run the whole thing. Only if a spot-check shows it is
+   actually dirty (a rare miss) record a `format-lint` `run` entry and re-spawn
+   `tdd-implementer` to clean it — no full BLOCK-and-rebuild for formatting. On
+   `BLOCKED` — a fork that surfaced mid-build — gather any further input the user needs
+   to settle it and re-spawn. Do **not** flip the task `done` yet — the acceptance gate
+   runs first.
 
 4. **Post-build barrier — [BARRIER.md](./BARRIER.md).** Once your review of a
    `COMPLETE` summary is clean, **commit the slice**, then run the validation barrier:

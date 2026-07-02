@@ -76,9 +76,8 @@ assert "journal.yaml exists"                  "$([[ -f $TARGET/journal.yaml ]] &
 assert "journal.yaml is an empty YAML list"   "$(grep -qx '\[\]' "$TARGET/journal.yaml" && echo true || echo false)"
 assert "default: skills bundled (repo)"       "$([[ -d $TARGET/.claude/skills/repo ]] && echo true || echo false)"
 assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.json ]] && echo true || echo false)"
-assert "default: observability skill bundled" "$([[ -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
-assert "default: observability standard.md"   "$([[ -f $TARGET/.claude/skills/observability/standard.md ]] && echo true || echo false)"
-assert "default: otel agent auto-installed"   "$([[ -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "default: observability NOT bundled (opt-in)" "$([[ ! -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
+assert "default: no otel agent (opt-in)"      "$([[ ! -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
 assert "default: codebase-design bundled"     "$([[ -d $TARGET/.claude/skills/codebase-design ]] && echo true || echo false)"
 assert "default: code-review bundled"         "$([[ -d $TARGET/.claude/skills/code-review ]] && echo true || echo false)"
 assert "default: diagnosing-bugs bundled"     "$([[ -d $TARGET/.claude/skills/diagnosing-bugs ]] && echo true || echo false)"
@@ -108,6 +107,14 @@ assert "--no-skills: workspace still created"  "$([[ -f $NS/CLAUDE.md ]] && echo
 assert "--no-skills: skills not installed"     "$([[ ! -d $NS/.claude/skills/repo ]] && echo true || echo false)"
 assert "--no-skills: no observability skill"   "$([[ ! -d $NS/.claude/skills/observability ]] && echo true || echo false)"
 assert "--no-skills: no otel agent"            "$([[ ! -f $NS/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+
+# ── --otel opts into observability (skill + otel agent + enabled flag) ─────────
+OT2="${TMPDIR_BASE}/otel-test"
+bash "$PROJ" "otel-test" --dir "$TMPDIR_BASE" --otel >/dev/null 2>&1
+assert "--otel: observability skill bundled"   "$([[ -d $OT2/.claude/skills/observability ]] && echo true || echo false)"
+assert "--otel: otel agent installed"          "$([[ -f $OT2/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "--otel: observability enabled in yaml" "$(grep -q 'enabled: true' "$OT2/project.yaml" && echo true || echo false)"
+assert "--otel: other skills still bundled"    "$([[ -d $OT2/.claude/skills/repo ]] && echo true || echo false)"
 
 # ── repo skill: install + hook wiring ─────────────────────────────────────────
 RT="${TMPDIR_BASE}/repo-test"
@@ -405,6 +412,10 @@ assert "next: runtime-validator agent wired"        "$([[ -f $NT/.claude/agents/
 assert "next: BARRIER.md reference doc installed"   "$([[ -f $NT/.claude/skills/next/BARRIER.md ]] && echo true || echo false)"
 assert "next: SKILL points to canonical BARRIER"    "$(grep -q 'BARRIER.md' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "next: SKILL reads journal tail (dec 6)"     "$(grep -q 'last ~15 entries' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+assert "tdd-implementer: hardening baseline (dec 9)" "$(grep -q 'Harden by default' "$NT/.claude/agents/tdd-implementer.md" && echo true || echo false)"
+assert "next: passes security-posture (dec 9)"      "$(grep -q 'security-posture' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+assert "next: formatter spot-verify (dec 9)"        "$(grep -q 'spot-verify' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+assert "to-issues: coverage-map ownership (dec 10)" "$(grep -q 'Coverage map' "$NT/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"
