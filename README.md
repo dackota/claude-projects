@@ -90,7 +90,7 @@ cd ~/Documents/repos/claude-projects
 ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj   # optional: put proj on PATH
 ```
 
-Skills are **bundled by default** — every `proj <name>` copies them into the workspace's `.claude/skills/` and wires the hooks automatically. Pass `--no-skills` to opt out, or `--skills LIST` for a subset.
+Skills are **bundled by default** — every `proj <name>` copies them into the workspace's `.claude/skills/` and wires the hooks automatically. Pass `--no-skills` to opt out, or `--skills LIST` for a subset. The `observability` skill (and its `otel-observability-engineer` agent) is **opt-in** — add `--otel` to bundle it and enable the gate, since it stays dormant unless a project ships a service.
 
 ## Usage
 
@@ -105,6 +105,7 @@ proj update-skills [<project-name>] [options] # re-sync bundled skills in an exi
 | `--jira <KEY>` | Jira project key, e.g. `PROJ` | scaffold |
 | `--skills [LIST]` | Bundle only a comma-separated subset (bare `--skills` = all) | both |
 | `--no-skills` | Don't bundle skills into the new project | scaffold |
+| `--otel` | Opt into observability: bundle the `observability` skill + otel agent and set `observability.enabled: true` (off by default — the gate is dormant unless a project ships a service) | scaffold |
 | `--bundle-rules` | Copy the coding rules into `.claude/rules/` so they travel with the repo (off by default — global rules already load; opt in for teammates, CI, or fresh clones) | scaffold |
 | `--dry-run` | Print what would be created/updated without writing | both |
 | `--force` | Overwrite if the target directory exists | scaffold |

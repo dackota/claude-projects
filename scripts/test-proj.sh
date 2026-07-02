@@ -76,9 +76,8 @@ assert "journal.yaml exists"                  "$([[ -f $TARGET/journal.yaml ]] &
 assert "journal.yaml is an empty YAML list"   "$(grep -qx '\[\]' "$TARGET/journal.yaml" && echo true || echo false)"
 assert "default: skills bundled (repo)"       "$([[ -d $TARGET/.claude/skills/repo ]] && echo true || echo false)"
 assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.json ]] && echo true || echo false)"
-assert "default: observability skill bundled" "$([[ -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
-assert "default: observability standard.md"   "$([[ -f $TARGET/.claude/skills/observability/standard.md ]] && echo true || echo false)"
-assert "default: otel agent auto-installed"   "$([[ -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "default: observability NOT bundled (opt-in)" "$([[ ! -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
+assert "default: no otel agent (opt-in)"      "$([[ ! -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
 assert "default: codebase-design bundled"     "$([[ -d $TARGET/.claude/skills/codebase-design ]] && echo true || echo false)"
 assert "default: code-review bundled"         "$([[ -d $TARGET/.claude/skills/code-review ]] && echo true || echo false)"
 assert "default: diagnosing-bugs bundled"     "$([[ -d $TARGET/.claude/skills/diagnosing-bugs ]] && echo true || echo false)"
@@ -108,6 +107,14 @@ assert "--no-skills: workspace still created"  "$([[ -f $NS/CLAUDE.md ]] && echo
 assert "--no-skills: skills not installed"     "$([[ ! -d $NS/.claude/skills/repo ]] && echo true || echo false)"
 assert "--no-skills: no observability skill"   "$([[ ! -d $NS/.claude/skills/observability ]] && echo true || echo false)"
 assert "--no-skills: no otel agent"            "$([[ ! -f $NS/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+
+# ── --otel opts into observability (skill + otel agent + enabled flag) ─────────
+OT2="${TMPDIR_BASE}/otel-test"
+bash "$PROJ" "otel-test" --dir "$TMPDIR_BASE" --otel >/dev/null 2>&1
+assert "--otel: observability skill bundled"   "$([[ -d $OT2/.claude/skills/observability ]] && echo true || echo false)"
+assert "--otel: otel agent installed"          "$([[ -f $OT2/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+assert "--otel: observability enabled in yaml" "$(grep -q 'enabled: true' "$OT2/project.yaml" && echo true || echo false)"
+assert "--otel: other skills still bundled"    "$([[ -d $OT2/.claude/skills/repo ]] && echo true || echo false)"
 
 # ── repo skill: install + hook wiring ─────────────────────────────────────────
 RT="${TMPDIR_BASE}/repo-test"

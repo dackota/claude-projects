@@ -19,6 +19,9 @@
 #                      e.g. tdd,grill-with-docs) to restrict to a subset; bare
 #                      --skills is the same as the default (all skills).
 #   --no-skills        Opt out of bundling skills into the new project.
+#   --otel             Opt into observability: bundle the observability skill + otel
+#                      agent and set observability.enabled: true. Off by default — the
+#                      gate is dormant unless a project ships a service.  [scaffold only]
 #   --bundle-rules     Copy the coding rules bundled with claude-projects into the
 #                      project's .claude/rules/ so they travel with the repo. Off by
 #                      default — only needed for repos used on machines without your global
@@ -43,6 +46,7 @@ FORCE=false
 PROJECT_NAME=""
 COPY_SKILLS=true   # skills are bundled by default; opt out with --no-skills
 SKILLS_LIST=""  # empty = all bundled skills
+OTEL=false      # observability skill + otel agent are opt-in — enable with --otel
 BUNDLE_RULES=false # coding rules are NOT bundled by default (global rules already load);
                    # opt in with --bundle-rules for repos used without your global config
 SUBCOMMAND=""
@@ -403,6 +407,7 @@ while [[ $# -gt 0 ]]; do
     --dir)             [[ $# -lt 2 ]] && die "--dir requires an argument"; BASE_DIR="$2"; shift 2 ;;
     --jira)            [[ $# -lt 2 ]] && die "--jira requires an argument"; JIRA_KEY="$2"; shift 2 ;;
     --no-skills)       COPY_SKILLS=false; shift ;;
+    --otel)            OTEL=true; shift ;;
     --bundle-rules)    BUNDLE_RULES=true; shift ;;
     --skills)
       COPY_SKILLS=true
@@ -557,6 +562,9 @@ EOF
 )"
 
 # project.yaml
+# --otel opts the project into observability: bundle the skill + otel agent (above) and
+# enable the gate here; without it the gate stays dormant (flip enabled later if needed).
+if $OTEL; then OBS_ENABLED=true; else OBS_ENABLED=false; fi
 write_file "$TARGET/project.yaml" "$(cat << EOF
 name: ${PROJECT_NAME}
 jira_key: "${JIRA_KEY}"
@@ -564,7 +572,7 @@ created: ${TODAY}
 repos: []
 tasks: []
 observability:
-  enabled: false        # flip true (grill/to-prd) when this project ships a runtime service
+  enabled: ${OBS_ENABLED}       # --otel enables it; flip true later (grill/to-prd) if a service is added
   otlp_endpoint: ""     # OTLP Collector endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT)
   service_name: ""      # resource attribute; defaults to the project name
 validation:
@@ -632,6 +640,13 @@ if $COPY_SKILLS; then
     SKILLS_TO_COPY="$SKILLS_LIST"
   else
     SKILLS_TO_COPY="$(ls -1 "$SKILLS_SRC" 2>/dev/null | tr '\n' ' ')"
+    # observability (+ its otel agent) is opt-in: the gate is dormant unless a project
+    # ships a service, and it never fired by default in any workspace. Exclude it from
+    # the default bundle unless --otel is passed. (An explicit --skills list that names
+    # observability is still honored — that path doesn't reach here.)
+    if ! $OTEL; then
+      SKILLS_TO_COPY="$(printf '%s' "$SKILLS_TO_COPY" | tr ' ' '\n' | grep -vx 'observability' | tr '\n' ' ')"
+    fi
   fi
 
   # Pull in companion skills an orchestrator skill depends on (e.g. `next`).
