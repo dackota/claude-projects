@@ -70,6 +70,12 @@ validator follows. Two tiers:
   at the PR gate. If you spot one, note it in a single LOW line prefixed
   `→ security:` so it isn't lost, but do **not** raise your CRITICAL count for it
   and do **not** block on it.
+  - **But you carry the ledger.** When this diff is a **pure module** (no I/O or
+    trust boundary), the PR security gate may *skip* the `security-reviewer` spawn
+    entirely. So you always emit a **Security obligations for future callers**
+    section (see the output): the security *contract* this module imposes on the code
+    that will call it — not bugs, but the assumptions a caller must uphold. This is
+    the forward-looking ledger the security gate relies on when it skips a pure diff.
 - **Acceptance is not yours.** Whether the slice delivers its promised criteria is
   the `implementation-validator`'s call. Don't re-grade criteria.
 
@@ -124,13 +130,23 @@ retry loop in fetch.go; ran the test suite read-only: 42/42 pass")>
 
 ### LOW
 - `path:line` — <suggestion> (or `→ security: …` deferrals).
+
+## Security obligations for future callers
+<The security contract this module imposes on its callers — the assumptions a caller
+must uphold for it to be used safely (e.g. "callers must validate/escape `x` before
+passing it in"; "returns unsanitized HTML — the caller escapes"; "does not
+authenticate — the caller enforces authz"). Not bugs — obligations. This is the
+ledger the PR security gate relies on when a pure-module diff skips the
+security-reviewer. Write `_None._` when the module imposes no such obligation.>
 ```
 
 Rules:
 - `VERDICT: BLOCK` if and only if `CRITICAL > 0`; otherwise `VERDICT: PASS`.
 - Security deferrals never raise `CRITICAL` and never flip the verdict to BLOCK.
 - Omit a severity subsection if it has no findings.
+- **Always emit the Security obligations section** (even on a clean diff) — it is the
+  deferred-security ledger, not a findings list; use `_None._` when there is nothing.
 - If the diff is clean: `VERDICT: PASS`, all counts `0`, the **What I validated**
-  line, and a single line `_No correctness defects introduced by this diff._`
-  under the findings heading.
+  line, `_No correctness defects introduced by this diff._` under the findings
+  heading, and the Security obligations section.
 </content>

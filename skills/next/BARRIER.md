@@ -73,6 +73,11 @@ task's `rework` count so far (how many times it has looped back through this gat
 nudges you when a review agent finishes; these entries feed `STATUS.md`'s **Pipeline
 health**. The security gate at `gh pr create` records its own `run` entry the same way.
 
+The validation record is the **single home** for gate detail — one record per slice,
+each gate a section. `run` entries stay a terse one-line metric (gate · SHA · verdict ·
+counts · a ref to the record); `done` and `pr` journal entries **link** to the record
+rather than restating findings. Detail lives in exactly one place.
+
 ## Advance or loop back
 
 Treat these gates as one barrier — the slice advances only if **all** PASS; a runtime
@@ -85,8 +90,9 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
   read-only) — an `agent-controls` control. Then flip the task `active → done` and
   proceed to **Land** — open the PR with `scripts/repo.sh pr <task>` (cwd-safe;
   self-enforces the recorded review verdict), where the security review runs and
-  **appends its own section** to that record; acceptance and correctness are already
-  done.
+  **appends its own section** to that record. The PR gate does **not** re-run
+  acceptance or correctness — the post-build PASS already covers this HEAD SHA, so
+  only the security review runs there (no duplicate validation per slice).
 - **Any BLOCK** → the slice isn't ready. Leave the task `active`, write a `blocker`
   journal entry with the failing gate's findings (the validator's CRITICAL acceptance
   gaps, the correctness gate's CRITICAL bugs, the runtime gate's failure, and/or the

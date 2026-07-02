@@ -9,11 +9,15 @@
 #      BLOCK block). A manual `/pr-security-review` therefore always wins.
 #   2. No verdict, infra files in the diff -> require review (any size — a
 #      one-line IAM/security-group/bucket change is the small-but-critical case).
-#   3. No verdict, no security-relevant files (docs/config only) -> allow.
-#   4. No verdict, code-only and <= PR_SECURITY_MAX_SMALL_LINES (default 25)
-#      changed lines -> allow (small change skips; review still available by
-#      running the pr-security-review skill manually).
-#   5. Otherwise (larger code change) -> require review.
+#   3. No verdict, the code diff touches a trust boundary ("surface": network, DB,
+#      exec, env, secrets, templates) -> require review (any size).
+#   4. No verdict, no infra and no trust-boundary surface (a pure-logic module or
+#      docs/config only) -> allow. The correctness gate records any security
+#      obligations a pure module imposes on its callers, so the deferred-security
+#      ledger isn't lost; run /pr-security-review by hand for a full pass anytime.
+#
+# The skip keys on the trust boundary the diff *touches*, not its size — a pure
+# module skips at any size and a surface-touching change is reviewed at any size.
 #
 # Reads the Claude Code PreToolUse payload (JSON) on stdin.
 
@@ -54,8 +58,6 @@ if [[ -f "$verdict_file" ]]; then
 fi
 
 # No verdict yet. Decide whether the security lens is exempt.
-MAX="${PR_SECURITY_MAX_SMALL_LINES:-25}"
-
 base="$(git -C "$cwd" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
 [[ -z "$base" ]] && base="origin/main"
 
@@ -71,18 +73,14 @@ case " $dims " in
   *" infra "*) block "infra changes require a security review at any size. Run the pr-security-review skill, then re-run gh pr create." ;;
 esac
 
-# 3. No security-relevant files (docs/config only) -> allow.
-[[ -z "${dims// /}" ]] && exit 0
+# 3. A trust-boundary surface in the code diff (network / DB / exec / env / secrets /
+#    templates) requires review at any size.
+case " $dims " in
+  *" surface "*) block "the diff touches a security-relevant surface (network / DB / exec / env / secrets / templates). Run the pr-security-review skill, then re-run gh pr create." ;;
+esac
 
-# 4/5. Code-only: skip when small, else require review.
-mb="$(git -C "$cwd" merge-base "$base" HEAD 2>/dev/null || echo "$base")"
-stat="$(git -C "$cwd" diff --shortstat "$mb...HEAD" 2>/dev/null || true)"
-ins="$(printf '%s' "$stat" | grep -oE '[0-9]+ insertion' | grep -oE '^[0-9]+' || true)"
-del="$(printf '%s' "$stat" | grep -oE '[0-9]+ deletion'  | grep -oE '^[0-9]+' || true)"
-lines=$(( ${ins:-0} + ${del:-0} ))
-
-if [[ "$lines" -le "$MAX" ]]; then
-  exit 0  # small code-only change — gate skipped; /pr-security-review still available
-fi
-
-block "code change is ${lines} lines (> ${MAX}) with no security review. Run the pr-security-review skill, then re-run gh pr create. (Small code-only diffs ≤ ${MAX} lines skip automatically; tune with PR_SECURITY_MAX_SMALL_LINES.)"
+# 4. No infra and no trust-boundary surface -> a pure-logic module or docs/config
+#    only -> allow. The correctness gate records any security obligations a pure
+#    module imposes on its callers, so nothing is lost; /pr-security-review remains
+#    available by hand for a full pass on demand.
+exit 0
