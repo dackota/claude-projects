@@ -67,6 +67,7 @@ assert "CLAUDE.md nudges PROJECT.md bootstrap" "$(grep -q 'Before anything else,
 assert "CLAUDE.md drops docs/decisions"       "$(! grep -q 'docs/decisions' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: every-gated-slice validation" "$(grep -q 'Every gated slice' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: supersession type retired"    "$(! grep -q 'supersession' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: points to canonical BARRIER.md" "$(grep -q 'BARRIER.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
@@ -137,6 +138,8 @@ bash "$PROJ" update-skills --dir "$RT" >/dev/null
 assert "idempotent: git-guard still single"         "$([[ "$(count_cmd git-guard)" == "1" ]] && echo true || echo false)"
 assert "idempotent: journal-stop still single"      "$([[ "$(count_cmd journal-stop)" == "1" ]] && echo true || echo false)"
 assert "idempotent: no per-write journal-check"     "$([[ "$(count_cmd journal-check)" == "0" ]] && echo true || echo false)"
+# sync-status enforces the STATUS.md 500-token cap (Slice B, decision 8)
+assert "sync-status: 500-token cap enforced"        "$(grep -q '500 tokens' "$RT/.claude/skills/sync-status/SKILL.md" && echo true || echo false)"
 # update-skills must not nest a skill inside itself (.claude/skills/<x>/<x>/)
 NESTED=""
 for d in "$RT"/.claude/skills/*/; do
@@ -385,6 +388,9 @@ assert "next: tdd-implementer agent wired"          "$([[ -f $NT/.claude/agents/
 assert "next: implementation-validator agent wired" "$([[ -f $NT/.claude/agents/implementation-validator.md ]] && echo true || echo false)"
 assert "next: correctness-reviewer agent wired"     "$([[ -f $NT/.claude/agents/correctness-reviewer.md ]] && echo true || echo false)"
 assert "next: runtime-validator agent wired"        "$([[ -f $NT/.claude/agents/runtime-validator.md ]] && echo true || echo false)"
+assert "next: BARRIER.md reference doc installed"   "$([[ -f $NT/.claude/skills/next/BARRIER.md ]] && echo true || echo false)"
+assert "next: SKILL points to canonical BARRIER"    "$(grep -q 'BARRIER.md' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+assert "next: SKILL reads journal tail (dec 6)"     "$(grep -q 'last ~15 entries' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
 assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"

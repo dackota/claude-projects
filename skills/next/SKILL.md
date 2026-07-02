@@ -49,9 +49,13 @@ other signal.
    `blocked`, and `blocked_by`).
 2. `docs/plans/*-prd.md` — a PRD with lifecycle `status: active` is the signal
    that grilling produced a plan.
-3. `STATUS.md` — the synthesized current-state surface, for a richer summary
-   (a convenience, not authority; it can be stale).
-4. `journal.yaml` — recent events, to describe momentum.
+3. `STATUS.md` — the synthesized current-state surface and the **primary**
+   long-memory read (a synthesis, not authority; it can be stale).
+4. `journal.yaml` — read only the **tail** (the last ~15 entries) for recent
+   momentum. The full journal stays on disk — greppable for history tracing, but not
+   loaded every invocation. **Fallback:** if `STATUS.md` is missing or clearly stale
+   (older than the newest journal entries), read the full `journal.yaml` instead, so a
+   bounded tail never leaves you blind to project state.
 
 **Jira mode** (`jira_key` set): the PRD and tasks live in the tracker, so query it
 via the Atlassian MCP instead of local files, reading the same label conventions
@@ -170,86 +174,18 @@ disposable. For each build:
    up, exactly as you would on a failed acceptance gate. On `BLOCKED` — a fork that surfaced
    mid-build — gather any further input the user needs to settle it and re-spawn. Do **not**
    flip the task `done` yet — the acceptance gate runs first.
-4. **Post-build barrier (don't wait for the PR).** Once your own review of a
-   `COMPLETE` summary is clean, **commit the slice** in the worktree, then run the
-   barrier's gates in parallel. First the **acceptance gate**: spawn the
-   `implementation-validator` (Agent tool, `subagent_type: implementation-validator`)
-   on a **fresh context** to verify the slice against its contract *before* it is
-   marked done. Give it only the diff range (`<base>...HEAD`) + changed files and
-   the task's acceptance criteria / "what to build" — **not** the implementation
-   rationale; independence is the point. Pass the diff **range**, not pasted file
-   contents — the agent fetches the diff itself with `git`, which keeps secrets out
-   of its prompt (an `agent-controls` control). It returns `VERDICT: PASS | BLOCK`
-   (`BLOCK` iff `CRITICAL > 0`).
 
-   **Correctness gate (always — run in parallel).** In the **same message** as the
-   acceptance gate, spawn the `correctness-reviewer` (Agent tool,
-   `subagent_type: correctness-reviewer`) on a fresh context with the same diff
-   range + changed files and the task's "what to build" — again **not** the
-   implementation rationale. It is the independent net for correctness bugs *this
-   diff introduced* that no acceptance criterion named (nil derefs, races, leaks,
-   swallowed errors, wrong conditions). It **defers security** to the PR security
-   gate and treats maintainability smells as non-blocking warnings. It returns
-   `VERDICT: PASS | BLOCK` (`BLOCK` iff `CRITICAL > 0`, a diff-introduced bug). Run
-   it on every build, like the acceptance gate — correctness is not a per-project
-   choice.
-
-   **Runtime gate (when the diff is runnable — run in parallel).** When the diff
-   touches **runnable product source** (skip tests/docs/config-only — the same
-   classification the security gate's `classify.sh` makes), spawn the
-   `runtime-validator` (Agent tool, `subagent_type: runtime-validator`) in the
-   **same message** as the other gates, pointed at the committed worktree. Unlike
-   the read-only reviewers it may **execute** — build, boot, and drive the artifact
-   — but never modifies source, commits, or deploys. It drives the affected flow per
-   its baked playbook (CLI · server boot+probe · image build+boot · UI render ·
-   library harness), preferring `project.yaml`'s `validation.run_cmd` when set. It
-   returns `VERDICT: PASS | BLOCK | SKIP`: **BLOCK** on an objective runtime failure
-   (won't build/boot, the driven flow errors or 500s), **SKIP** when there's no
-   runnable surface or the sandbox lacks a needed dependency (a DB, creds, an
-   external service). **A SKIP never stalls the barrier** — treat it as pass for
-   advancement and record why it skipped.
-
-   **Observability gate (service tasks only — run in parallel).** If `project.yaml`
-   has `observability.enabled: true`, the agent `otel-observability-engineer` is
-   installed, **and** the diff adds a request-serving path, spawn that agent on the
-   same diff **in the same message** as the acceptance, correctness, and (when it
-   ran) runtime gates so they all run concurrently (no added latency). It returns its own
-   `VERDICT: PASS | BLOCK` (`BLOCK` iff `BLOCKER > 0`) against
-   `.claude/skills/observability/standard.md`. Skip it silently when the flag is
-   off, the agent isn't installed, or the diff adds no request path.
-
-   **Record each gate run (the Audit step).** After a gate agent returns — PASS,
-   BLOCK, or SKIP — append a `run` journal entry (`type: run`) with its `agent`,
-   `task`, `verdict`, the `critical`/`high` counts it reported (the BLOCKER count
-   for the observability gate; none for a runtime SKIP), the task's `rework` count
-   so far (how many times it has
-   looped back through this gate), and `approver` (null unless a named human
-   approved a gated action). The `run-check.sh` hook nudges you when a review agent
-   finishes; these entries feed `STATUS.md`'s **Pipeline health**. The security gate
-   at `gh pr create` records its own `run` entry the same way.
-
-   Treat these gates as one barrier — the slice advances only if **all** PASS; a
-   runtime **SKIP** counts as pass, and the observability gate counts only when it
-   ran:
-   - **All PASS** → **write the validation record** to
-     `docs/validations/<task-id>-<slug>.md` (workspace lifecycle frontmatter; one
-     section per gate — verdict · what it validated · how · evidence — built from
-     what each gate returned; record the *passing* state). You write it, not the
-     review agents (they are read-only) — an `agent-controls` control. Then flip the
-     task `active → done` and proceed to **Land** — open the PR with
-     `scripts/repo.sh pr <task>` (cwd-safe; self-enforces the recorded review
-     verdict), where the security review runs and **appends its own section** to
-     that record; acceptance and correctness are already done.
-   - **Any BLOCK** → the slice isn't ready. Leave the task `active`, write a
-     `blocker` journal entry with the failing gate's findings (the validator's
-     CRITICAL acceptance gaps, the correctness gate's CRITICAL bugs, the runtime
-     gate's failure, and/or the observability BLOCKERs), and **re-spawn the
-     `tdd-implementer`** framed as
-     *closing those specific gaps* — pass it the findings, not a fresh build. Its
-     fixes are new commits → re-run the failed gate(s) on the new `HEAD`. Loop until
-     all PASS. BLOCK findings stay in the journal, not the record — the record
-     captures the state that ultimately passed. This keeps the loop-back cheap and
-     local — the task never reaches a PR (or even `done`) until it passes.
+4. **Post-build barrier — [BARRIER.md](./BARRIER.md).** Once your review of a
+   `COMPLETE` summary is clean, **commit the slice**, then run the validation barrier:
+   the acceptance and correctness gates always, the runtime gate when the diff is
+   runnable, and the observability gate for service tasks — **all in one parallel
+   message**. Append a `run` journal entry per gate (the Audit step). **All PASS**
+   (a runtime SKIP counts as pass) → write the per-slice validation record and flip
+   the task `active → done`, then **Land**. **Any BLOCK** → leave it `active`, journal
+   the findings, and re-spawn `tdd-implementer` to close the gaps, re-running the
+   failed gate(s) on the new `HEAD`. The full normative protocol — verdict rules,
+   agent contracts, record shape, and the PR security gate — is
+   **[BARRIER.md](./BARRIER.md)**; follow it.
 
 Invoking `/tdd` by hand is different: it runs the loop **inline in the main agent**
 (Opus) for an ad-hoc build — see the `tdd` skill's main-agent mode. `/next` always

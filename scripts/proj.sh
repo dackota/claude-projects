@@ -274,30 +274,19 @@ waiting; `sync` re-points to the base once the parent merges.
 
 ## Independent review
 
-Fresh agents that never saw the build conversation guard each slice, at two moments:
+Fresh agents that never saw the build guard each slice at two moments: a **post-build
+barrier** (`/next` runs acceptance + correctness always, runtime for runnable diffs,
+observability for service tasks — one parallel message; any BLOCK loops back to `tdd`
+before the task is `done`, a runtime SKIP counts as pass) and a **security gate** at
+`gh pr create` (required for infra at any size or code over ~25 lines; small code-only
+and docs-only skip; `--web`/GitHub UI bypass). The orchestrator writes one
+**validation record** per slice to `docs/validations/<task>.md`, a section per gate.
+Every review agent carries an `agent-controls` **operating contract** and is read-only
+where it reviews.
 
-- **Post-build barrier — right after the build.** When `/next` builds a task it
-  commits the slice and, in one parallel message, runs `implementation-validator`
-  (does the diff meet its **acceptance criteria**?) and `correctness-reviewer` (any
-  **correctness bug this diff introduced** — nil derefs, races, leaks, swallowed
-  errors — that no criterion named?); a runnable diff also runs `runtime-validator`
-  (does the artifact actually **build, boot, and run** the affected flow? — it may
-  execute but not modify source, and SKIPs when the sandbox can't run it), and
-  service tasks add `otel-observability-engineer`. A CRITICAL/BLOCK from any gate
-  **loops back to `tdd`**; the task stays `active` (never `done`, let alone a PR)
-  until all pass (a runtime SKIP counts as pass). The orchestrator then writes a
-  **validation record** to `docs/validations/<task>.md` — one section per gate
-  (verdict · what · how · evidence).
-- **Security — at the PR gate.** With `pr-security-review` installed (default),
-  CLI `gh pr create` is gated by `security-reviewer`, which appends its own section
-  to that record. A CRITICAL blocks until fixed (each fix commit re-reviews);
-  HIGH/MEDIUM/LOW are noted in the PR body but pass. A review is required when the
-  diff touches infra (any size) or is code over ~25 lines; small code-only and
-  docs-only diffs skip. `--web`/GitHub UI bypass the gate.
-
-Each review agent carries a declared **operating contract** (permitted evidence,
-tool scope, approval rule, required check, fallback) and records a `run` journal
-entry per gate — the `agent-controls` skill is the standard.
+The normative protocol — which gates run when, verdicts, loop-back, record shape, and
+the PR gate — lives in **one** place: the `next` skill's
+`.claude/skills/next/BARRIER.md`. Don't restate it here or in other skills; point to it.
 
 **PreToolUse gates read the command before it runs — write, then act.** When a
 hook gates an action on a file a *prior* step must produce (e.g. the PR gate reads

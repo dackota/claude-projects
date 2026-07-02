@@ -72,7 +72,12 @@ last_synced: <ISO-8601 timestamp>
 - ...
 ```
 
-Target size: ~350–500 tokens. Dense and link-heavy. Every active work item and next move should link to its plan or decision doc.
+**Size cap: 500 tokens, hard.** STATUS.md is a synthesis, not an archive. If the
+regenerated file would exceed ~500 tokens, trim until it fits, in this order:
+(1) prefer a link over restating a doc's content; (2) drop resolved/landed items —
+they live in the journal and the closed docs; (3) collapse multi-line detail into one
+dense line; (4) keep only the last 3–5 entries in Recent decisions. Every active work
+item and next move links to its plan or decision doc rather than describing it.
 
 **Pipeline health** is the loop's "Learn" surface — a rollup of `journal.yaml`
 `type: run` entries (block rate, rework rate, which gate blocks most, which tasks
