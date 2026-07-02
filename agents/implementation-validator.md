@@ -1,6 +1,6 @@
 ---
 name: implementation-validator
-description: Independent, review-only acceptance validator for a just-built slice. Spawned by /next's post-build acceptance gate — right after the tdd-implementer finishes and before the task is marked done — on a fresh context that sees only the diff and the task's acceptance criteria, never the implementation conversation. Checks whether the slice actually delivers what it promised and returns a machine-readable verdict; a BLOCK loops the slice straight back to tdd.
+description: Independent, review-only acceptance validator for a just-built slice. Spawned by /next's post-build barrier as the acceptance gate — right after the tdd-implementer finishes and before the task is marked done, alongside the correctness-reviewer — on a fresh context that sees only the diff and the task's acceptance criteria, never the implementation conversation. Checks whether the slice actually delivers what it promised and returns a machine-readable verdict; a BLOCK loops the slice straight back to tdd.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 contract:
@@ -98,6 +98,11 @@ HIGH: <n>
 MEDIUM: <n>
 LOW: <n>
 
+## What I validated
+<one or two lines: the criteria you walked and how you checked them (e.g. "walked
+all 4 acceptance criteria against the diff; re-ran the suite read-only: 31/31
+pass") — the caller persists this into the slice's validation record>
+
 ## Acceptance validation findings
 
 ### CRITICAL
@@ -115,7 +120,9 @@ LOW: <n>
 
 Rules:
 - `VERDICT: BLOCK` if and only if `CRITICAL > 0`; otherwise `VERDICT: PASS`.
+- Always include the **What I validated** block — it is your evidence in the
+  slice's validation record.
 - Omit a severity subsection if it has no findings.
-- If every acceptance criterion is met: `VERDICT: PASS`, all counts `0`, and a
-  single line `_All acceptance criteria met by this diff._` under the findings
-  heading.
+- If every acceptance criterion is met: `VERDICT: PASS`, all counts `0`, the
+  **What I validated** line, and a single line `_All acceptance criteria met by
+  this diff._` under the findings heading.

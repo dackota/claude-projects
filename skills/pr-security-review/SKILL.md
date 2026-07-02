@@ -13,12 +13,13 @@ Run an **independent** security review on the changes a PR would introduce,
 agent — one that never saw the implementation conversation — reviews the diff with
 skeptical eyes; this catches what self-review rationalizes away.
 
-> **Acceptance is not checked here.** Whether the slice actually delivers the
-> behavior its acceptance criteria promised is validated *earlier*, by `/next`'s
-> **post-build acceptance gate** (`implementation-validator`, run right after the
-> `tdd-implementer` finishes and looped back to `tdd` before the task is ever
-> marked done). By the time a PR opens, acceptance has already passed — so this
-> gate is purely the **security** lens.
+> **Acceptance and correctness are not checked here.** Whether the slice delivers
+> its acceptance criteria (`implementation-validator`) and is free of
+> diff-introduced correctness bugs (`correctness-reviewer`) is validated *earlier*,
+> by `/next`'s **post-build barrier** — run right after the `tdd-implementer`
+> finishes and looped back to `tdd` before the task is ever marked done. By the
+> time a PR opens, both have already passed — so this gate is purely the
+> **security** lens.
 
 A PreToolUse hook (`hooks/pr-gate.sh`) blocks `gh pr create` until a passing
 verdict exists for the current `HEAD` commit. This skill produces that verdict.
@@ -80,8 +81,11 @@ and the gate honors a recorded verdict over any skip rule.
      fix them. Each fix is a new commit → a new `HEAD` → re-run this skill on the
      new SHA.
    - **PASS:** Build the PR body with a `## Security review` section summarizing the
-     counts (and any HIGH/MEDIUM/LOW with `path:line`), then create the PR. The gate
-     reads the `PASS` verdict for `HEAD` and allows it.
+     counts (and any HIGH/MEDIUM/LOW with `path:line`). If the slice has a
+     validation record (`docs/validations/<task>.md`, written by `/next`'s
+     post-build barrier), **append a `## Security` section** to it — verdict · what
+     was reviewed · the counts/findings — so the record carries all lenses. Then
+     create the PR; the gate reads the `PASS` verdict for `HEAD` and allows it.
 
 ## Notes
 

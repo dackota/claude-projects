@@ -272,19 +272,26 @@ waiting; `sync` re-points to the base once the parent merges.
 
 ## Independent review
 
-Two reviews guard each slice, each by a fresh agent that never saw the build
-conversation, run at different moments:
+Fresh agents that never saw the build conversation guard each slice, at two moments:
 
-- **Acceptance — right after the build.** When `/next` builds a task it commits
-  the slice and runs `implementation-validator` against the acceptance criteria.
-  A CRITICAL gap **loops back to `tdd`**; the task stays `active` (never `done`,
-  let alone a PR) until acceptance passes.
+- **Post-build barrier — right after the build.** When `/next` builds a task it
+  commits the slice and, in one parallel message, runs `implementation-validator`
+  (does the diff meet its **acceptance criteria**?) and `correctness-reviewer` (any
+  **correctness bug this diff introduced** — nil derefs, races, leaks, swallowed
+  errors — that no criterion named?); a runnable diff also runs `runtime-validator`
+  (does the artifact actually **build, boot, and run** the affected flow? — it may
+  execute but not modify source, and SKIPs when the sandbox can't run it), and
+  service tasks add `otel-observability-engineer`. A CRITICAL/BLOCK from any gate
+  **loops back to `tdd`**; the task stays `active` (never `done`, let alone a PR)
+  until all pass (a runtime SKIP counts as pass). The orchestrator then writes a
+  **validation record** to `docs/validations/<task>.md` — one section per gate
+  (verdict · what · how · evidence).
 - **Security — at the PR gate.** With `pr-security-review` installed (default),
-  CLI `gh pr create` is gated by `security-reviewer`. A CRITICAL blocks until
-  fixed (each fix commit re-reviews); HIGH/MEDIUM/LOW are noted in the PR body but
-  pass. A review is required when the diff touches infra (any size) or is code
-  over ~25 lines; small code-only and docs-only diffs skip. `--web`/GitHub UI
-  bypass the gate.
+  CLI `gh pr create` is gated by `security-reviewer`, which appends its own section
+  to that record. A CRITICAL blocks until fixed (each fix commit re-reviews);
+  HIGH/MEDIUM/LOW are noted in the PR body but pass. A review is required when the
+  diff touches infra (any size) or is code over ~25 lines; small code-only and
+  docs-only diffs skip. `--web`/GitHub UI bypass the gate.
 
 Each review agent carries a declared **operating contract** (permitted evidence,
 tool scope, approval rule, required check, fallback) and records a `run` journal
@@ -321,7 +328,7 @@ Doc types:
 | **Plan** | `docs/plans/` | "create a plan", "plan it out". Detail Problem, Solution, Trade-offs, Considerations; break into human-reviewable Tasks. |
 | **ADR** | `docs/adr/0001-slug.md` | A decision that is (1) hard to reverse, (2) surprising without context, (3) a real trade-off. If any bar is missing, skip it — a `decision` journal line suffices. |
 | **Research** | `docs/research/` | "research how X works"; may be referenced by multiple plans. |
-| **Validation** | `docs/validations/` | When a meaningful plan/milestone finishes (not every task). Auditable evidence: commands run, `path/to/file.ext:34`, test output. Reference it from the `done` journal entry. |
+| **Validation** | `docs/validations/` | Every gated slice leaves one — the `/next` orchestrator writes it from the post-build gates' evidence (one record per task, each gate a section: verdict · what · how · evidence like commands run, `path/to/file.ext:34`, test/boot output). It records the **final passing** state; mid-loop BLOCK history stays in `blocker`/`run` journal entries. The `done` journal entry references it. Hand-invoked `/tdd` writes its own at close-out. |
 | **Script** | `scripts/` | Repeatable or logic-heavy work. Bash preferred, Python OK. |
 
 ## journal.yaml
@@ -562,6 +569,8 @@ observability:
   enabled: false        # flip true (grill/to-prd) when this project ships a runtime service
   otlp_endpoint: ""     # OTLP Collector endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT)
   service_name: ""      # resource attribute; defaults to the project name
+validation:
+  run_cmd: ""           # optional: how the runtime gate boots/drives the artifact; inferred per project type when empty
 EOF
 )"
 
