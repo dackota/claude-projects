@@ -46,9 +46,19 @@ The build **loop** is non-interactive: an AFK task's design was settled upstream
 ```bash
 proj my-feature          # scaffold + bundle all skills and hooks (default)
 cd my-feature
+git init && git add -A && git commit -m "chore: scaffold workspace"  # see tip below
 $EDITOR PROJECT.md       # fill in your goal
 claude                   # Claude reads STATUS.md first, then /next routes you
 ```
+
+> **Tip — put the workspace itself under git.** The scaffold already writes a
+> `.gitignore` (excluding `repos/` and `worktrees/`), so `git init` in the new
+> workspace and commit as you go. The control files — `STATUS.md`, `journal.yaml`,
+> `CONTEXT.md`, plans, ADRs, and validation records — then carry full revision
+> history: you can see how the plan and decisions evolved, diff or roll back a bad
+> turn, and share project state with teammates. This repo tracks the **project**;
+> the actual code lives in the repos under `repos/`, each with its own history and
+> managed via `scripts/repo.sh`.
 
 From there you rarely pick a skill by hand — **`/next` routes you.** It reads the workspace state, reports the phase, and runs the right one:
 
