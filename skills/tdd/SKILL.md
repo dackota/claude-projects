@@ -31,14 +31,15 @@ invoked it**:
   autonomous pipeline path. For a HITL task `/next` gathers the needed human input
   first (it can talk to the user; the sub-agent can't), then hands it to the
   sub-agent. The orchestrator flips the task `active`, spawns the sub-agent, reviews
-  its `COMPLETE | PARTIAL | BLOCKED` summary, then runs the **post-build acceptance
-  gate**: it commits the slice and spawns a fresh `implementation-validator` to
-  check the diff against the acceptance criteria *before* marking the task done. A
-  `BLOCK` (a promised behavior undelivered) loops straight back to this sub-agent
-  with the gate's findings — the task never reaches `done` (or a PR) until
-  acceptance passes. Only on `PASS` does the orchestrator close out. This keeps the
-  orchestrator lean and the implementation tokens on the cheaper model. The
-  sub-agent follows the same discipline below.
+  its `COMPLETE | PARTIAL | BLOCKED` summary, then runs the **post-build barrier**:
+  it commits the slice and spawns, in parallel, a fresh `implementation-validator`
+  (acceptance criteria) and a fresh `correctness-reviewer` (diff-introduced
+  correctness bugs) *before* marking the task done, then writes the slice's
+  validation record. A `BLOCK` from either — a promised behavior undelivered or a
+  real bug introduced — loops straight back to this sub-agent with the findings; the
+  task never reaches `done` (or a PR) until both pass. Only on `PASS` does the
+  orchestrator close out. This keeps the orchestrator lean and the implementation
+  tokens on the cheaper model. The sub-agent follows the same discipline below.
 
 No mode gates the *loop* on a confirmation prompt. If a genuine design fork the
 criteria didn't settle comes up mid-build, surface it (inline mode) or return
@@ -175,15 +176,17 @@ close-out check.
 Then:
 
 - Flip the `project.yaml` task `status` to `done` — the journal's `done` signal (skip for an ad-hoc request with no task).
-- For a meaningful plan or milestone (not every task), write a validation doc to `docs/validations/` with the evidence (commands run, `path:line`, test output) and reference it from the `done` journal entry.
+- Write the **validation record** to `docs/validations/<task>.md` (workspace lifecycle frontmatter) with the evidence — commands run, `path:line`, test output — and reference it from the `done` journal entry. In inline mode you are the reviewer, so this is your own close-out evidence; in `/next` subagent mode the orchestrator writes it from the gates' output instead (see below).
 
-In subagent mode (`/next`), an **independent acceptance check** runs immediately
-after this loop — `/next` commits the slice and spawns a fresh
-`implementation-validator` against the acceptance criteria (including the refactor
-pass above) before the task is marked done; a `BLOCK` loops straight back here. In
-inline mode there is no auto-gate (you're watching live) — close-out here is your own
-confidence that the slice is done; run `/pr-security-review` by hand if you want an
-independent pass. Either way, security is reviewed later at the PR gate.
+In subagent mode (`/next`), an **independent post-build barrier** runs immediately
+after this loop — `/next` commits the slice and spawns, in parallel, a fresh
+`implementation-validator` (acceptance criteria, including the refactor pass above)
+and a fresh `correctness-reviewer` (diff-introduced correctness bugs) before the
+task is marked done, then writes the slice's validation record from their evidence;
+a `BLOCK` from either loops straight back here. In inline mode there is no auto-gate
+(you're watching live) — close-out here is your own confidence that the slice is
+done; run `/pr-security-review` by hand if you want an independent pass. Either way,
+security is reviewed later at the PR gate.
 
 ## Checklist Per Cycle
 

@@ -19,7 +19,7 @@ gap is closed:
 | `actor` | Who is acting — the agent's identity. |
 | `permitted-evidence` | The context it may read: which diffs, files, logs, tickets, runbooks. An allowlist, not "the whole repo." |
 | `blocked-actions` | What it must never do — the actions outside its remit (modify files, mutate git, push, deploy, sign). |
-| `tool-scope` | `read-only` \| `write` \| `deploy` — the coarse capability tier. Read-only *inspection* is separated from *write*. |
+| `tool-scope` | `read-only` \| `execute` \| `write` \| `deploy` — the coarse capability tier. Read-only *inspection*, *execute* (runs/builds but no source mutation, e.g. a runtime validator), *write* (mutates source), and *deploy* are distinct. |
 | `approval-rule` | Which actions need a **named human** before execution (`none` for advisory/review-only agents). |
 | `required-check` | The check or evidence that must pass before its output is trusted (a verdict format, a test, an independent review). |
 | `fallback` | What happens when it cannot prove its result — default to flagging/blocking, never to silently proceeding. |
