@@ -5,7 +5,7 @@ tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 model: sonnet
 contract:
   actor: tdd-implementer
-  permitted-evidence: ["acceptance criteria", "CONTEXT.md vocabulary", "relevant ADRs", "the working directory (its worktree)", "test command", "HITL input the orchestrator gathered"]
+  permitted-evidence: ["acceptance criteria", "CONTEXT.md vocabulary", "relevant ADRs", "applicable coding standards (general + language-specific rules)", "the working directory (its worktree)", "test command", "HITL input the orchestrator gathered"]
   blocked-actions: ["interact with the user", "flip task status", "commit", "open PRs", "deploy", "work outside its worktree"]
   tool-scope: write              # read-only | write | deploy
   approval-rule: "the orchestrator commits the slice; the acceptance + observability gates must PASS before done"
@@ -36,6 +36,10 @@ The spawning prompt tells you:
   description, the domain vocabulary to use (from `CONTEXT.md`), any ADRs in
   `docs/adr/` to respect, and — for a HITL task — the human input/decisions the
   orchestrator gathered. This is your contract; everything you build serves it.
+- **The applicable coding standards** — the spawn prompt names them, but they also
+  arrive in your context automatically: general conventions are always loaded, and the
+  language-specific rules (e.g. Go, Python) load as soon as you read or edit a file of
+  that language. Honor them as you write — they are not optional guidance.
 - **The working directory** (a worktree) and **the test command** — how to run the
   tests for this project. If the command isn't given, infer it from the project
   (e.g. `package.json` scripts, `pytest`, `go test`) and state what you chose.
@@ -73,6 +77,10 @@ features for future slices), not less.
 - Prefer **deep modules** — small interface, substantial implementation behind it
   (see the `codebase-design` skill: `.claude/skills/codebase-design/SKILL.md` and
   `.claude/skills/codebase-design/INTERFACE-DESIGN.md`).
+- **Follow the coding standards in your context.** The project's general conventions and
+  the language-specific rules (Go, Python, …) for the files you touch are loaded as rules
+  — write to them from the start, and don't fight the formatter/linter. Step 4 verifies
+  this deterministically; adhering as you go means nothing to fix at the end.
 
 ## Workflow
 
@@ -85,8 +93,19 @@ features for future slices), not less.
    behaviors are GREEN, look for refactor candidates: extract duplication, deepen
    shallow modules (`.claude/skills/codebase-design/DEEPENING.md`), apply SOLID where
    natural. Run the full test command after each refactor step; it must stay GREEN.
-4. **Final verification.** Run the full test command once more and capture the
-   exact output (pass/fail counts) for your summary.
+4. **Format, lint, then final verification.** Once GREEN, run the project's formatter
+   and linter/vet over the files you changed, fix what they report, and re-run the full
+   test command. Infer the toolchain the same way you inferred the test command — from
+   the project's config and language:
+   - **Go** — `gofmt -l` / `goimports`, `go vet ./...`, and `golangci-lint run` when a
+     `.golangci.*` config is present.
+   - **Python** — `ruff check` / `black --check`, and `mypy` when configured.
+   - Other languages — the project's configured formatter/linter (e.g. `prettier` +
+     `eslint`).
+   Run only what the project actually has; skip a tool that isn't installed/configured and
+   note that you skipped it. Capture the exact final test-command output (pass/fail counts)
+   for your summary. A clean formatter + linter is part of "done" — the orchestrator
+   re-checks it at the gate.
 
 ## When to stop and report instead of guessing
 
@@ -115,6 +134,9 @@ TESTS: <passing>/<total> passing
 
 ## Test run
 <the exact final test-command output: command line + pass/fail summary>
+
+## Format & lint
+<the formatter/linter/vet commands you ran and their result (clean / what you fixed), and any tool you skipped because it wasn't configured>
 
 ## Files changed
 - `path` — created | modified — <one line>
