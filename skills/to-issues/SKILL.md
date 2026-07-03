@@ -62,16 +62,26 @@ Iterate until the user approves the breakdown.
 
 ### 5. Coverage map — assert every requirement is owned
 
-Before publishing, build a **coverage map**: a table pairing each PRD requirement /
-user story with the slice(s) that own it. Then **assert every requirement is owned by
-at least one slice.** If any requirement has no owner, stop — add a slice that owns it,
-fold it into an existing slice, or record it explicitly as out of scope with the user's
+Build a **coverage map** pairing each PRD **requirement ID** (the `R<n>` list in the
+PRD's `## Requirements`) with the slice(s) that own it, and **record the owned IDs on
+each slice** as a `covers:` list. Then **assert every requirement is owned by at least
+one slice.** If any requirement has no owner, stop — add a slice that owns it, fold it
+into an existing slice, or record it explicitly as out of scope with the user's
 agreement. Never publish with an unowned requirement: a requirement no slice owns is the
 failure class where a feature reaches production because nothing was responsible for
-building it — it passes every gate because no gate owned it either.
+building it — it passes every build gate because there is no diff to review.
 
-Present the map as `requirement / user story → owning slice(s)`, and surface any
-requirement that came out unowned so it is resolved before publish.
+This is not eyeballed prose — it is **verified deterministically**. On the local path,
+after writing the tasks in step 6, run:
+
+```
+bash .claude/skills/to-issues/coverage-check.sh <prd-path> project.yaml
+```
+
+It reads the PRD's `R<n>` IDs and each slice's `covers:` and exits non-zero, naming any
+unowned requirement. Do not consider the breakdown published until it passes. (On the
+Jira path there is no local `project.yaml` to check — present the `requirement → slice`
+map for the user to confirm, and put the covered IDs in each issue body.)
 
 ### 6. Publish the approved slices
 
@@ -102,6 +112,11 @@ State each as a **behavioral** outcome — what the system does, observable thro
 - [ ] Criterion 2
 - [ ] Criterion 3
 
+## Covers
+
+The PRD requirement IDs (`R<n>`) this slice owns — the coverage map's record on the
+issue. Every requirement must appear on at least one slice.
+
 ## Out of scope
 
 The adjacent behavior a reader might assume this slice covers but it does not. Keeps the slice's boundary explicit for the builder and the acceptance gate.
@@ -122,6 +137,7 @@ For the local path, append a thin task entry per slice:
   type: AFK                        # AFK | HITL
   status: todo                     # todo | active | done | blocked
   blocked_by: []                   # task ids that must finish first
+  covers: [R1, R4]                 # PRD requirement IDs this slice owns (coverage-check.sh verifies every R is owned)
   plan: docs/plans/<slug>-prd.md   # the source PRD/plan
   jira: null
   # release: true                  # optional — marks a release/deploy task so /next's

@@ -54,6 +54,23 @@ A LONG, numbered list of user stories. Each user story should be in the format o
 
 This list of user stories should be extremely extensive and cover all aspects of the feature.
 
+## Requirements
+
+The enumerated, checkable list of what this feature must do — the universe
+`to-issues` maps to slices and `coverage-check.sh` verifies is fully owned. Each is a
+stable-ID behavioral requirement:
+
+- R1: <what the system must do>
+- R2: <...>
+
+Derive them from the user stories **and** — critically — from the *implied behavior of
+every schema field, config option, and external input* in the Implementation Decisions
+below. A data field almost always implies a behavior that produces or consumes it (a
+`FileGlob` field implies "glob patterns are expanded"); that implied behavior is the
+class that escapes to production when no slice owns it, because no build gate reviews a
+diff that was never written. Give each such behavior its own `R<n>`, not just the field.
+IDs are stable and never reused; keep numbering monotonic even across revisions.
+
 ## Implementation Decisions
 
 A list of implementation decisions that were made. This can include:

@@ -438,6 +438,7 @@ tasks:
     type: AFK                      # AFK | HITL
     status: todo                   # todo | active | done | blocked
     blocked_by: []                 # list of task ids
+    covers: [R1, R4]               # PRD requirement ids this slice owns (coverage-check.sh verifies every R is owned)
     plan: docs/plans/chart-split-prd.md
     jira: null                     # set when mirrored to a Jira issue
 ```

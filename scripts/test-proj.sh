@@ -871,6 +871,56 @@ assert "project.yaml: declares test_cmd"            "$(grep -qE '^[[:space:]]*te
 assert "tdd-implementer: prefers declared toolchain" "$(grep -q 'validation.format_cmd' "$RT/.claude/agents/tdd-implementer.md" && echo true || echo false)"
 assert "next: spot-verify reads declared cmds"       "$(grep -q 'validation.format_cmd' "$RT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 
+# ── Layer 1: coverage map — every PRD requirement owned by a slice ────────────
+COV="$RT/.claude/skills/to-issues/coverage-check.sh"
+assert "coverage: check script installed"            "$([[ -f $COV ]] && echo true || echo false)"
+assert "to-prd: PRD template has Requirements"       "$(grep -q '## Requirements' "$RT/.claude/skills/to-prd/SKILL.md" && echo true || echo false)"
+assert "to-issues: slices persist covers"            "$(grep -q 'covers:' "$RT/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
+assert "to-issues: runs coverage-check"              "$(grep -q 'coverage-check' "$RT/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
+assert "CLAUDE.md: task schema has covers"           "$(grep -q 'covers:' "$TARGET/CLAUDE.md" && echo true || echo false)"
+
+if command -v yq >/dev/null 2>&1; then
+  covcheck() { local rc=0; bash "$COV" "$1" "$2" >/dev/null 2>&1 || rc=$?; echo "$rc"; }
+  COVWS="${TMPDIR_BASE}/cov"; mkdir -p "$COVWS"
+  cat > "$COVWS/feature-a-prd.md" <<'EOF'
+## Requirements
+- R1: the poller expands glob patterns
+- R2: config rejects oversized files
+- R3: the filter validates facet names
+EOF
+  cat > "$COVWS/ok.yaml" <<'EOF'
+tasks:
+  - id: s1
+    plan: docs/plans/feature-a-prd.md
+    covers: [R1, R2]
+  - id: s2
+    plan: docs/plans/feature-a-prd.md
+    covers: [R3]
+EOF
+  assert "coverage: all requirements owned -> pass"  "$([[ "$(covcheck "$COVWS/feature-a-prd.md" "$COVWS/ok.yaml")" == "0" ]] && echo true || echo false)"
+
+  cat > "$COVWS/gap.yaml" <<'EOF'
+tasks:
+  - id: s1
+    plan: docs/plans/feature-a-prd.md
+    covers: [R1, R2]
+EOF
+  assert "coverage: unowned requirement -> fail"     "$([[ "$(covcheck "$COVWS/feature-a-prd.md" "$COVWS/gap.yaml")" == "1" ]] && echo true || echo false)"
+  COV_OUT="$(bash "$COV" "$COVWS/feature-a-prd.md" "$COVWS/gap.yaml" 2>&1 || true)"
+  assert "coverage: names the unowned id (R3)"       "$(echo "$COV_OUT" | grep -q 'R3' && echo true || echo false)"
+
+  # covers under a DIFFERENT plan must not count toward this PRD (plan filter)
+  cat > "$COVWS/otherplan.yaml" <<'EOF'
+tasks:
+  - id: s1
+    plan: docs/plans/feature-b-prd.md
+    covers: [R1, R2, R3]
+EOF
+  assert "coverage: other-plan covers don't count"   "$([[ "$(covcheck "$COVWS/feature-a-prd.md" "$COVWS/otherplan.yaml")" == "1" ]] && echo true || echo false)"
+else
+  echo "  (skipping coverage-check behavior — yq not installed)"
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
