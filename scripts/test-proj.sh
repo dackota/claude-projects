@@ -863,6 +863,14 @@ assert "update-skills: refreshes managed block"      "$(! grep -qF 'STALE RETIRE
 assert "update-skills: preserves content outside"    "$(grep -qF 'USER NOTE: keep me' "$RT/CLAUDE.md" && echo true || echo false)"
 assert "update-skills: re-stamps .harness-version"   "$(grep -qE '^harness_sha:' "$RT/.harness-version" && echo true || echo false)"
 
+# ADR-0004: declarative toolchain — project.yaml declares format/lint/test commands,
+# and the runner + spot-verify prefer them (declared-then-inferred, not hardcoded).
+assert "project.yaml: declares format_cmd"          "$(grep -qE '^[[:space:]]*format_cmd:' "$TARGET/project.yaml" && echo true || echo false)"
+assert "project.yaml: declares lint_cmd"            "$(grep -qE '^[[:space:]]*lint_cmd:'   "$TARGET/project.yaml" && echo true || echo false)"
+assert "project.yaml: declares test_cmd"            "$(grep -qE '^[[:space:]]*test_cmd:'   "$TARGET/project.yaml" && echo true || echo false)"
+assert "tdd-implementer: prefers declared toolchain" "$(grep -q 'validation.format_cmd' "$RT/.claude/agents/tdd-implementer.md" && echo true || echo false)"
+assert "next: spot-verify reads declared cmds"       "$(grep -q 'validation.format_cmd' "$RT/.claude/skills/next/SKILL.md" && echo true || echo false)"
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
