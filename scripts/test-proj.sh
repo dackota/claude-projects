@@ -649,6 +649,101 @@ else
   echo "  (skipping agent-controls contract checks — yq not installed)"
 fi
 
+# ── B1/B2: cross-workspace outcome rollup (scripts/rollup.sh) ─────────────────
+ROLLUP="${SCRIPT_DIR}/rollup.sh"
+assert "rollup: script exists"                     "$([[ -f $ROLLUP ]] && echo true || echo false)"
+
+# workspace with a representative spread of gate runs (post-A1 structured schema)
+WS1="${TMPDIR_BASE}/rollup-ws1"; mkdir -p "$WS1"
+cat > "$WS1/journal.yaml" <<'EOF'
+- date: 2026-07-01
+  type: run
+  agent: implementation-validator
+  task: t1
+  verdict: PASS
+  critical: 0
+  high: 0
+  rework: 0
+  summary: acceptance PASS
+- date: 2026-07-01
+  type: run
+  agent: correctness-reviewer
+  task: t1
+  verdict: BLOCK
+  critical: 2
+  high: 0
+  rework: 0
+  summary: correctness BLOCK (2 CRITICAL)
+- date: 2026-07-01
+  type: run
+  agent: correctness-reviewer
+  task: t1
+  verdict: PASS
+  critical: 0
+  high: 0
+  rework: 1
+  summary: correctness PASS after rework
+- date: 2026-07-01
+  type: run
+  agent: runtime-validator
+  task: t1
+  verdict: SKIP
+  critical: 0
+  high: 0
+  rework: 0
+  summary: runtime SKIP — pure library
+- date: 2026-07-02
+  type: run
+  agent: runtime-validator
+  task: t2
+  verdict: BLOCK
+  critical: 1
+  high: 0
+  rework: 0
+  gate: release-verify
+  escape: true
+  summary: glob fan-out escape caught at deploy verify
+- date: 2026-07-02
+  type: run
+  agent: security-reviewer
+  task: t1
+  verdict: PASS
+  critical: 0
+  high: 0
+  rework: 0
+  approver: alice
+  summary: security PASS, human-approved
+- date: 2026-07-02
+  type: blocker
+  summary: blocked on missing sandbox credential
+EOF
+
+# workspace with no gate runs (older harness) — counted, contributes nothing
+WS2="${TMPDIR_BASE}/rollup-ws2"; mkdir -p "$WS2"
+cat > "$WS2/journal.yaml" <<'EOF'
+- date: 2026-06-01
+  type: done
+  summary: shipped
+- date: 2026-06-01
+  type: decision
+  summary: chose approach A
+EOF
+
+OUT="$(bash "$ROLLUP" "$WS1" "$WS2" 2>/dev/null || true)"
+assert "rollup: counts workspaces + gate-run coverage" "$(echo "$OUT" | grep -qF '2 workspace(s) scanned, 1 with gate runs' && echo true || echo false)"
+assert "rollup: verdict tally PASS/BLOCK/SKIP"      "$(echo "$OUT" | grep -qF 'PASS 3 / BLOCK 2 / SKIP 1' && echo true || echo false)"
+assert "rollup: block rate excludes SKIP"          "$(echo "$OUT" | grep -qF 'block rate 40% (2/5 decided)' && echo true || echo false)"
+assert "rollup: by-gate correctness 1/2"           "$(echo "$OUT" | grep -qF 'correctness 1/2' && echo true || echo false)"
+assert "rollup: by-gate runtime 1/2"               "$(echo "$OUT" | grep -qF 'runtime 1/2' && echo true || echo false)"
+assert "rollup: rework loop-backs + tasks"         "$(echo "$OUT" | grep -qF '2 loop-back(s) across 2 task(s)' && echo true || echo false)"
+assert "rollup: runtime SKIP rate (B2)"            "$(echo "$OUT" | grep -qF 'Runtime SKIP: 1/2' && echo true || echo false)"
+assert "rollup: escapes-found-live counted"        "$(echo "$OUT" | grep -qF 'Escapes (found live): 1' && echo true || echo false)"
+assert "rollup: human interventions"               "$(echo "$OUT" | grep -qF '1 blocker(s) + 1 approval(s)' && echo true || echo false)"
+
+# empty / no-run corpus must not divide by zero or crash
+OUT2="$(bash "$ROLLUP" "$WS2" 2>/dev/null || echo CRASH)"
+assert "rollup: no-run corpus degrades gracefully" "$([[ "$OUT2" != "CRASH" ]] && echo "$OUT2" | grep -qF '0 with gate runs' && echo true || echo false)"
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
