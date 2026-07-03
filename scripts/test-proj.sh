@@ -676,8 +676,24 @@ assert "runtime-validator: verdict carries CRITICAL" "$(grep -q 'CRITICAL: <n>' 
 assert "runtime-validator: live read-only, no deploy" "$(grep -q 'mutate any live/shared environment' "$NT/.claude/agents/runtime-validator.md" && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
-assert "next: does NOT pull unrelated journal"      "$([[ ! -d $NT/.claude/skills/journal ]] && echo true || echo false)"
-assert "next: does NOT pull unrelated repo"         "$([[ ! -d $NT/.claude/skills/repo ]] && echo true || echo false)"
+# A3: next now pulls its lifecycle infrastructure as hard deps (previously excluded,
+# which yielded a legal-looking but silently broken `--skills next` install).
+assert "next: pulls journal companion"              "$([[ -d $NT/.claude/skills/journal ]] && echo true || echo false)"
+assert "next: pulls repo companion"                 "$([[ -d $NT/.claude/skills/repo ]] && echo true || echo false)"
+assert "next: pulls sync-status companion"          "$([[ -d $NT/.claude/skills/sync-status ]] && echo true || echo false)"
+assert "next: pulls pr-security-review companion"   "$([[ -d $NT/.claude/skills/pr-security-review ]] && echo true || echo false)"
+assert "next: repo.sh script installed"             "$([[ -f $NT/scripts/repo.sh ]] && echo true || echo false)"
+assert "next: security-reviewer agent installed"    "$([[ -f $NT/.claude/agents/security-reviewer.md ]] && echo true || echo false)"
+NX_SETTINGS="$NT/.claude/settings.json"
+nx_cmd() { jq "[.. | objects | select(has(\"command\")) | select(.command|test(\"$1\"))] | length" "$NX_SETTINGS"; }
+assert "next: pr-gate hook wired"                   "$([[ "$(nx_cmd pr-gate)" == "1" ]] && echo true || echo false)"
+assert "next: rework-cap hook wired"                "$([[ "$(nx_cmd rework-cap)" == "1" ]] && echo true || echo false)"
+# A3: /next preflight self-check exists, passes on a whole install, fails when degraded
+assert "next: preflight script installed"           "$([[ -f $NT/.claude/skills/next/next-preflight.sh ]] && echo true || echo false)"
+preflight() { local rc=0; CLAUDE_PROJECT_DIR="$1" bash "$NT/.claude/skills/next/next-preflight.sh" >/dev/null 2>&1 || rc=$?; echo "$rc"; }
+assert "next: preflight passes on full install"     "$([[ "$(preflight "$NT")" == "0" ]] && echo true || echo false)"
+NX_EMPTY="${TMPDIR_BASE}/nx-empty"; mkdir -p "$NX_EMPTY"
+assert "next: preflight fails on empty workspace"   "$([[ "$(preflight "$NX_EMPTY")" == "1" ]] && echo true || echo false)"
 # observability is NOT a companion of next — it is service-scoped, not part of the flow.
 assert "next: does NOT pull observability"          "$([[ ! -d $NT/.claude/skills/observability ]] && echo true || echo false)"
 
@@ -818,6 +834,34 @@ assert "rollup: human interventions"               "$(echo "$OUT" | grep -qF '1 
 # empty / no-run corpus must not divide by zero or crash
 OUT2="$(bash "$ROLLUP" "$WS2" 2>/dev/null || echo CRASH)"
 assert "rollup: no-run corpus degrades gracefully" "$([[ "$OUT2" != "CRASH" ]] && echo "$OUT2" | grep -qF '0 with gate runs' && echo true || echo false)"
+
+# ── A3/A4/A5/A6: Phase-A integrity fixes ──────────────────────────────────────
+
+# A3.4: yq fails loud (die) when an agent-bearing skill would install, not silent-skip
+assert "proj: yq-loud guard for agent skills"       "$(grep -q 'installs agents but yq is not available' "$PROJ" && echo true || echo false)"
+
+# A4: Pipeline health surfaces correctness + runtime by-gate + runtime-SKIP dormancy
+SS="$RT/.claude/skills/sync-status/SKILL.md"
+assert "sync-status: by-gate includes correctness"  "$(grep -qE 'By gate:.*correctness' "$SS" && echo true || echo false)"
+assert "sync-status: by-gate includes runtime"      "$(grep -qE 'By gate:.*runtime'     "$SS" && echo true || echo false)"
+assert "sync-status: surfaces runtime SKIP dormancy" "$(grep -q 'Runtime gate:' "$SS" && grep -q 'SKIP' "$SS" && echo true || echo false)"
+
+# A5: gate rules have a single normative home — no restatement outside BARRIER.md
+A5_LEAK=$(grep -rlF -e 'the 3rd rework is allowed' -e 'advances only if **all** PASS' "$RT/.claude/skills" 2>/dev/null | grep -v '/next/BARRIER.md' || true)
+assert "single-home: gate rules only in BARRIER.md" "$([[ -z "$A5_LEAK" ]] && echo true || echo false)"
+
+# A6: managed CLAUDE.md block + harness SHA stamp
+assert "scaffold: CLAUDE.md has managed BEGIN marker" "$(grep -qF 'BEGIN proj:harness' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "scaffold: CLAUDE.md has managed END marker"   "$(grep -qF 'END proj:harness'   "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "scaffold: .harness-version stamped"           "$(grep -qE '^harness_sha:' "$TARGET/.harness-version" && echo true || echo false)"
+
+# A6: update-skills refreshes the managed block (drift removed) + preserves outside content + re-stamps
+printf '\n<!-- USER NOTE: keep me -->\n' >> "$RT/CLAUDE.md"
+awk '{print} /BEGIN proj:harness/ && !d {print "STALE RETIRED RULE LINE"; d=1}' "$RT/CLAUDE.md" > "$RT/CLAUDE.md.tmp" && mv "$RT/CLAUDE.md.tmp" "$RT/CLAUDE.md"
+bash "$PROJ" update-skills --dir "$RT" >/dev/null 2>&1
+assert "update-skills: refreshes managed block"      "$(! grep -qF 'STALE RETIRED RULE LINE' "$RT/CLAUDE.md" && echo true || echo false)"
+assert "update-skills: preserves content outside"    "$(grep -qF 'USER NOTE: keep me' "$RT/CLAUDE.md" && echo true || echo false)"
+assert "update-skills: re-stamps .harness-version"   "$(grep -qE '^harness_sha:' "$RT/.harness-version" && echo true || echo false)"
 
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""

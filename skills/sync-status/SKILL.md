@@ -64,7 +64,8 @@ last_synced: <ISO-8601 timestamp>
 ## Pipeline health
 - Runs: <total> gate runs — block rate <pct>% (<blocks>/<total>)
 - Rework: <avg> loop-backs per task; <n> task(s) looped back
-- By gate: acceptance <blocks>/<runs>, security <blocks>/<runs>, observability <blocks>/<runs>
+- By gate: acceptance <blocks>/<runs>, correctness <blocks>/<runs>, runtime <blocks>/<runs>, security <blocks>/<runs>, observability <blocks>/<runs>
+- Runtime gate: <skips>/<runtime-runs> run(s) SKIPped — or "hasn't actually executed in <n> slice(s)" when it has only ever SKIPped (the one gate for live-only bugs is dormant)
 - <task-id> reworked <k>× — <the gate that keeps blocking it>
 
 ## Next moves

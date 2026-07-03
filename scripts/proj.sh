@@ -153,7 +153,15 @@ install_skill_agents() {
   local target="$1" skill="$2" agent
   local skill_md="${SKILLS_SRC}/${skill}/SKILL.md"
   [[ -f "$skill_md" ]] || return 0
-  command -v yq >/dev/null 2>&1 || return 0
+  # yq is required to read a skill's `agents:` list. Fail LOUD when the skill
+  # actually declares agents (else the gate agents silently never install and the
+  # pipeline ships broken) — but stay silent for agent-less skills.
+  if ! command -v yq >/dev/null 2>&1; then
+    if grep -qE '^agents:' "$skill_md"; then
+      die "Skill '${skill}' installs agents but yq is not available to read its 'agents:' list. Install: brew install yq"
+    fi
+    return 0
+  fi
   local agents
   agents="$(yq --front-matter=extract '.agents // [] | .[]' "$skill_md" 2>/dev/null || true)"
   [[ -z "${agents// /}" ]] && return 0
@@ -198,12 +206,15 @@ post_install_skill() {
 
 # Companion skills a skill orchestrates and cannot function without.
 # skill_deps <skill> -> echoes space-separated dependency skill names
-# Note: `codebase-researcher` is intentionally NOT a dep of `next` — it's an
-# optional detour, never pulled in as a dep of next (it's bundled by default with
-# all skills, but an explicit `--skills` subset must name it).
+# `next` needs its planning/build companions AND its lifecycle infrastructure:
+# `repo` (worktree ops in Pick/Build), `journal` (the `run` audit trail + rework-cap
+# hook the barrier depends on), `sync-status` (Pipeline health in Learn), and
+# `pr-security-review` (the "independent review before every PR" promise in Land).
+# Without these a `--skills next` install is a legal-looking but silently broken
+# pipeline. `codebase-researcher` is intentionally NOT a dep — it's an optional detour.
 skill_deps() {
   case "$1" in
-    next) echo "grill-with-docs to-prd to-issues tdd codebase-design" ;;
+    next) echo "grill-with-docs to-prd to-issues tdd codebase-design repo journal sync-status pr-security-review" ;;
     *) ;;
   esac
 }
@@ -216,6 +227,47 @@ expand_skill_deps() {
     echo "$s"
     for d in $(skill_deps "$s"); do echo "$d"; done
   done | awk '!seen[$0]++' | tr '\n' ' '
+}
+
+# ── harness versioning + managed CLAUDE.md block ────────────────────────────
+# The whole CLAUDE.md is harness-generated (project specifics live in PROJECT.md /
+# CONTEXT.md), so it is wrapped in markers and treated as a managed block that
+# `update-skills` can rewrite — closing the drift where `update-skills` refreshed
+# skills but left CLAUDE.md stating retired rules. A `.harness-version` stamp
+# records the source commit so a workspace's drift from the harness is visible.
+HARNESS_BEGIN="<!-- BEGIN proj:harness (managed by proj update-skills; do not edit inside these markers) -->"
+HARNESS_END="<!-- END proj:harness -->"
+
+# Short commit SHA of the claude-projects source this proj was invoked from.
+harness_sha() { git -C "${SCRIPT_DIR}/.." rev-parse --short HEAD 2>/dev/null || echo unknown; }
+
+# The full managed CLAUDE.md document: markers wrapping the canonical template.
+claude_md_document() {
+  printf '%s\n' "$HARNESS_BEGIN"
+  claude_md_content
+  printf '%s\n' "$HARNESS_END"
+}
+
+# Rewrite the managed block in an existing CLAUDE.md, preserving any content the
+# user added outside the markers. No-op (with a warning) when markers are absent,
+# so a pre-managed-block workspace is never clobbered.
+refresh_managed_claude_md() {
+  local target="$1"
+  local f="$target/CLAUDE.md"
+  [[ -f "$f" ]] || return 0
+  if ! grep -qF "$HARNESS_BEGIN" "$f" || ! grep -qF "$HARNESS_END" "$f"; then
+    warn "CLAUDE.md has no proj:harness managed block — not refreshed (re-scaffold or add the markers to enable auto-refresh)."
+    return 0
+  fi
+  local before after
+  before="$(awk -v m="$HARNESS_BEGIN" 'index($0,m){exit} {print}' "$f")"
+  after="$(awk  -v m="$HARNESS_END"   'p{print} index($0,m){p=1}' "$f")"
+  {
+    [[ -n "$before" ]] && printf '%s\n' "$before"
+    claude_md_document
+    [[ -n "$after" ]] && printf '%s\n' "$after"
+    :
+  } > "$f"
 }
 
 # ── embedded CLAUDE.md ───────────────────────────────────────────────────────
@@ -493,6 +545,15 @@ if [[ "$SUBCOMMAND" == "update-skills" ]]; then
     post_install_skill "$TARGET" "$skill"
   done
 
+  # Refresh the managed CLAUDE.md block + re-stamp the source SHA so the workspace
+  # picks up harness changes to the template — not just the skills.
+  if $DRY_RUN; then
+    echo "  [update] CLAUDE.md managed block + .harness-version"
+  else
+    refresh_managed_claude_md "$TARGET"
+    printf 'harness_sha: %s\nstamped: %s\n' "$(harness_sha)" "$TODAY" > "$TARGET/.harness-version"
+  fi
+
   echo ""
   if $DRY_RUN; then
     info "Dry run complete. Re-run without --dry-run to update."
@@ -554,8 +615,11 @@ make_dir "$TARGET/scripts"
 make_dir "$TARGET/repos"
 make_dir "$TARGET/worktrees"
 
-# CLAUDE.md
-write_file "$TARGET/CLAUDE.md" "$(claude_md_content)"
+# CLAUDE.md (wrapped in the managed-block markers so update-skills can refresh it)
+write_file "$TARGET/CLAUDE.md" "$(claude_md_document)"
+
+# .harness-version — stamp the source commit so workspace/harness drift is visible
+write_file "$TARGET/.harness-version" "$(printf 'harness_sha: %s\nstamped: %s' "$(harness_sha)" "$TODAY")"
 
 # .gitignore
 write_file "$TARGET/.gitignore" "$(cat << 'EOF'
