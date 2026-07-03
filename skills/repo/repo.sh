@@ -457,15 +457,26 @@ cmd_pr() {
 usage() { grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'; }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
-SUB="${1:-help}"; shift || true
-case "$SUB" in
-  clone)    cmd_clone "$@" ;;
-  worktree) cmd_worktree "$@" ;;
-  sync)     cmd_sync "$@" ;;
-  pr)       cmd_pr "$@" ;;
-  status)   cmd_status "$@" ;;
-  remove)   cmd_remove "$@" ;;
-  list)     cmd_list "$@" ;;
-  help|-h|--help) usage ;;
-  *) die "Unknown command: $SUB (run 'repo.sh help')" ;;
-esac
+# Wrapped in main() and invoked on the final line so bash parses the ENTIRE
+# script (every function body + this dispatch) before executing any of it. A
+# script whose file is rewritten mid-run — e.g. a concurrent checkout/commit in
+# the workspace touching this file — can otherwise desync bash's lazy,
+# execute-as-it-reads handling and abort with a spurious "syntax error near
+# unexpected token" pointing at an innocent line. Reading the whole file up front
+# closes that window.
+main() {
+  local sub="${1:-help}"; shift || true
+  case "$sub" in
+    clone)    cmd_clone "$@" ;;
+    worktree) cmd_worktree "$@" ;;
+    sync)     cmd_sync "$@" ;;
+    pr)       cmd_pr "$@" ;;
+    status)   cmd_status "$@" ;;
+    remove)   cmd_remove "$@" ;;
+    list)     cmd_list "$@" ;;
+    help|-h|--help) usage ;;
+    *) die "Unknown command: $sub (run 'repo.sh help')" ;;
+  esac
+}
+
+main "$@"
