@@ -78,3 +78,24 @@ test("applies 10% discount", () => {
 ```
 
 The tell: the test still passes if the implementation's formula is wrong, because both sides change together. Assert against a value computed by hand, taken from the spec, or written as a literal.
+
+## Property / Invariant Tests
+
+An example test checks one input you chose. A **property test** asserts an *invariant* against many generated inputs — reach for it when a pure transformation's output has a contract that must hold for **every** input, especially when the input is untrusted. (The doctrine and the "when" heuristic live in `rules/common/testing.md`; language tooling in the per-language testing rules.)
+
+```typescript
+// Example-based: proves this one case
+test("diff marks the changed line", () => {
+  expect(diff(a, b).unified).toContain("-  replicas: 1");
+});
+
+// Property: proves the invariant for ALL inputs — including the ones you didn't think of
+test("every physical line of the diff starts with +, -, or space", () => {
+  fc.assert(fc.property(manifestSetPairs(), ([a, b]) => {
+    for (const line of diff(a, b).unified.split("\n"))
+      if (line !== "") expect("+- ".includes(line[0])).toBe(true);
+  }));
+});
+```
+
+The tell that you need one: you catch yourself writing "…and also when the input is empty / huge / malformed / not newline-terminated" as separate example cases. State the invariant once and let the generator find the breaking input — otherwise that input is the one a downstream gate catches only after a full build-and-review loop.

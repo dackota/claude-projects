@@ -97,7 +97,13 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
   journal entry with the failing gate's findings (the validator's CRITICAL acceptance
   gaps, the correctness gate's CRITICAL bugs, the runtime gate's failure, and/or the
   observability BLOCKERs), and **re-spawn the `tdd-implementer`** framed as *closing
-  those specific gaps* — pass it the findings, not a fresh build. Its fixes are new
+  those specific gaps* — pass it the findings, not a fresh build. **If a BLOCK recurs in
+  the same family across loops** — the reworked `HEAD` fails a *sibling* input of the same
+  broken invariant — stop forwarding the reported case-by-case: name the invariant, require
+  the fix at a **single chokepoint**, and require a **property/invariant test that covers
+  the class** (`rules/common/testing.md`). Patching each reported case in turn just
+  surfaces the next sibling on the following loop; a class-level fix + invariant test ends
+  the family in one pass. Its fixes are new
   commits → re-run the failed gate(s) on the new `HEAD`. Loop until all PASS. BLOCK
   findings stay in the journal, not the record — the record captures the state that
   ultimately passed. This keeps the loop-back cheap and local — the task never reaches

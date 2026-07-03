@@ -61,6 +61,15 @@ features for future slices), not less.
 - **Test behavior through public interfaces**, never implementation details. A
   good test survives an internal refactor. Mock only at system boundaries
   (`.claude/skills/tdd/mocking.md`).
+- **Assert invariants, not just examples.** When a behavior is a pure transformation
+  whose output must satisfy a contract for *every* input — a structural invariant (every
+  line prefixed; counts that must agree; `decode(encode(x)) == x`; sorted/valid output),
+  or an untrusted/unvalidated input space — write a **property/invariant test** over
+  generated + adversarial inputs (empty, boundary, oversized, malformed) in the same
+  red-green loop, not only an example table (`rules/common/testing.md`; language tooling
+  in the language testing rules and `.claude/skills/tdd/tests.md`). One such test subsumes
+  a family of edge cases and catches the input a downstream gate would otherwise catch only
+  after a full loop-back.
 - **Minimal code to pass the current test.** Don't anticipate future tests.
 - **Never refactor while RED.** Get to GREEN first, then refactor.
 - **Observable by default (baseline — always).** For any slice that logs or handles
