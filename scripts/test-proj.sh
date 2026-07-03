@@ -69,6 +69,8 @@ assert "CLAUDE.md: every-gated-slice validation" "$(grep -q 'Every gated slice' 
 assert "CLAUDE.md: supersession type retired"    "$(! grep -q 'supersession' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: points to canonical BARRIER.md" "$(grep -q 'BARRIER.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: surface-based security skip" "$(grep -q 'trust-boundary' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: size-based skip retired"   "$(! grep -q '25 lines' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
 assert "STATUS.md has last_synced: null"      "$(grep -q 'last_synced: null' "$TARGET/STATUS.md" && echo true || echo false)"
@@ -124,6 +126,7 @@ assert "repo skill: scripts/repo.sh installed"      "$([[ -f $RT/scripts/repo.sh
 assert "repo skill: scripts/repo.sh executable"     "$([[ -x $RT/scripts/repo.sh ]] && echo true || echo false)"
 assert "repo skill: skill dir copied"               "$([[ -d $RT/.claude/skills/repo ]] && echo true || echo false)"
 assert "repo skill: settings.json created"          "$([[ -f $RT/.claude/settings.json ]] && echo true || echo false)"
+assert "repo skill: unwired stale-stop removed"     "$([[ ! -f $RT/.claude/skills/repo/hooks/repo-stale-stop.sh ]] && echo true || echo false)"
 
 SETTINGS="$RT/.claude/settings.json"
 count_cmd() { jq "[.. | objects | select(has(\"command\")) | select(.command|test(\"$1\"))] | length" "$SETTINGS"; }
@@ -239,6 +242,13 @@ if command -v yq >/dev/null 2>&1; then
   C3="$RT/worktrees/slice-3/remote"
   assert "stack: auto-derive single blocker"        "$([[ "$(git -C "$C3" rev-parse --abbrev-ref '@{u}' 2>/dev/null)" == "slice-1" ]] && echo true || echo false)"
 
+  # Removing a stacked parent must refuse while children point at its branch.
+  RM_RC=0
+  repo remove slice-1 >/dev/null 2>&1 || RM_RC=$?
+  assert "stack: remove parent refused (children)"  "$([[ $RM_RC -ne 0 ]] && echo true || echo false)"
+  assert "stack: parent branch survives refusal"    "$(git -C "$RT/repos/remote" show-ref --verify --quiet refs/heads/slice-1 && echo true || echo false)"
+  assert "stack: parent worktree survives refusal"  "$([[ -d $RT/worktrees/slice-1/remote ]] && echo true || echo false)"
+
   # No blockers -> ordinary worktree off base, not stacked.
   yq e -i '.tasks += [{"id":"slice-free","title":"free","type":"AFK","status":"todo","blocked_by":[]}]' "$RT/project.yaml"
   repo worktree slice-free remote >/dev/null 2>&1
@@ -257,6 +267,12 @@ if command -v yq >/dev/null 2>&1; then
   git -C "$SEED" push -q origin main
   repo sync slice-2 >/dev/null 2>&1
   assert "stack: re-points to base after merge"     "$([[ "$(git -C "$CHILD" rev-parse --abbrev-ref '@{u}' 2>/dev/null)" == "origin/main" ]] && echo true || echo false)"
+
+  # Orphaned admin entries (a worktree dir removed by hand) are pruned by status.
+  repo worktree prune-probe remote >/dev/null 2>&1
+  rm -rf "$RT/worktrees/prune-probe"
+  repo status >/dev/null 2>&1
+  assert "status: prunes orphaned worktree entry"   "$(! git -C "$RT/repos/remote" worktree list | grep -q '/prune-probe/' && echo true || echo false)"
 else
   echo "  (skipping repo.sh lifecycle tests — yq not installed)"
 fi
@@ -322,6 +338,26 @@ printf 'import requests\ndef f(u):\n    return requests.get(u)\n' > "$CLS/net.py
 git -C "$CLS" add -A; git -C "$CLS" commit -qm net
 assert "classify: trust-boundary code -> surface"   "$(case " $(classify) " in *" surface "*) echo true ;; *) echo false ;; esac)"
 assert "classify: pure code has no surface"         "$(git -C "$CLS" checkout -q code-only; case " $(classify) " in *" surface "*) echo false ;; *) echo true ;; esac)"
+
+git -C "$CLS" checkout -q -b sql-mig main
+printf 'ALTER TABLE users ADD COLUMN email text;\n' > "$CLS/001_add_email.sql"
+git -C "$CLS" add -A; git -C "$CLS" commit -qm sql
+assert "classify: sql migration -> surface"         "$(case " $(classify) " in *" surface "*) echo true ;; *) echo false ;; esac)"
+
+git -C "$CLS" checkout -q -b env-file main
+printf 'API_KEY=abc123\n' > "$CLS/.env"
+git -C "$CLS" add -A; git -C "$CLS" commit -qm env
+assert "classify: env file -> surface"              "$(case " $(classify) " in *" surface "*) echo true ;; *) echo false ;; esac)"
+
+git -C "$CLS" checkout -q -b json-infra main
+printf '{"AWSTemplateFormatVersion":"2010-09-09","Resources":{}}\n' > "$CLS/stack.json"
+git -C "$CLS" add -A; git -C "$CLS" commit -qm cfn
+assert "classify: CloudFormation json -> infra"     "$(case " $(classify) " in *" infra "*) echo true ;; *) echo false ;; esac)"
+
+git -C "$CLS" checkout -q -b json-fixture main
+printf '{"name":"fixture","items":[1,2,3]}\n' > "$CLS/fixture.json"
+git -C "$CLS" add -A; git -C "$CLS" commit -qm fixture
+assert "classify: plain json fixture -> none"       "$([[ -z "$(classify)" ]] && echo true || echo false)"
 
 # ── pr-gate.sh: gates gh pr create (surface-aware + verdict-honoring) ─────────
 # Give the local repo an origin/main ref so the hook can resolve a base.
@@ -420,6 +456,7 @@ assert "to-issues: coverage-map ownership (dec 10)" "$(grep -q 'Coverage map' "$
 assert "next: RELEASE-VERIFY.md installed"          "$([[ -f $NT/.claude/skills/next/RELEASE-VERIFY.md ]] && echo true || echo false)"
 assert "next: Land references release-verify"       "$(grep -q 'RELEASE-VERIFY.md' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "runtime-validator: release mode"            "$(grep -q 'Release mode' "$NT/.claude/agents/runtime-validator.md" && echo true || echo false)"
+assert "runtime-validator: verdict carries CRITICAL" "$(grep -q 'CRITICAL: <n>' "$NT/.claude/agents/runtime-validator.md" && echo true || echo false)"
 assert "runtime-validator: live read-only, no deploy" "$(grep -q 'mutate any live/shared environment' "$NT/.claude/agents/runtime-validator.md" && echo true || echo false)"
 assert "next: CLAUDE.md has /next session-start"    "$(grep -q '/next' "$NT/CLAUDE.md" && echo true || echo false)"
 # Scoping guard: dependency resolution is additive, not "install everything".
@@ -449,6 +486,9 @@ assert "agent-controls: not hook-bearing"           "$([[ "$(count_cmd agent-con
 # application of the agent-controls standard), and a read-only agent must not hold
 # write tools. This is a repo invariant, so check the source agents directly.
 AGENTS_DIR="${SCRIPT_DIR}/../agents"
+assert "agents: tool-scope enum includes execute"   "$(! grep -l '# read-only | write | deploy' "$AGENTS_DIR"/*.md >/dev/null 2>&1 && echo true || echo false)"
+assert "agents: no stray </content> tags"           "$(! grep -q '</content>' "$AGENTS_DIR"/*.md && echo true || echo false)"
+assert "REFERENCE: size-skip knob retired"          "$(! grep -q 'PR_SECURITY_MAX_SMALL_LINES' "${SCRIPT_DIR}/../docs/REFERENCE.md" && echo true || echo false)"
 if command -v yq >/dev/null 2>&1; then
   CONTRACT_KEYS="actor approval-rule blocked-actions fallback permitted-evidence required-check tool-scope"
   contracts_ok=true

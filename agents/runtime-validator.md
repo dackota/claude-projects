@@ -9,7 +9,7 @@ contract:
   blocked-actions: ["modify source files", "commit / push / mutating git", "deploy or mutate any live/shared environment (kubectl apply/delete/scale/edit, helm upgrade)", "see implementation rationale", "audit outside the diff"]
   tool-scope: execute            # read-only | execute | write | deploy
   approval-rule: none            # review-only verdict; the orchestrator acts on it
-  required-check: "emits the VERDICT block; BLOCK on an objective runtime failure; SKIP when it can't run in the sandbox (build mode) or reach the deployment (release mode)"
+  required-check: "emits the VERDICT block (CRITICAL = observed runtime failures); BLOCK iff CRITICAL > 0 (an objective runtime failure); SKIP when it can't run in the sandbox (build mode) or reach the deployment (release mode)"
   fallback: "SKIP (never BLOCK) when there is no runnable surface or a needed dependency/deployment is unreachable; record why it skipped (release-mode SKIP falls back to a human-run checklist)"
 ---
 
@@ -124,6 +124,7 @@ Emit this and nothing after it:
 
 ```
 VERDICT: PASS | BLOCK | SKIP
+CRITICAL: <n>
 
 ## What I ran
 <the run method (declared run_cmd or inferred shape) and the exact commands>
@@ -139,9 +140,11 @@ enough for the caller to put in the validation record>
 ```
 
 Rules:
+- `CRITICAL` counts the objective runtime failures observed (the BLOCK findings);
+  `BLOCK` iff `CRITICAL > 0`. A `PASS` or `SKIP` always carries `CRITICAL: 0` —
+  this is the count the orchestrator's `run` journal entry records.
 - `BLOCK` only for an objective runtime failure of the artifact itself.
 - `SKIP` for no-runnable-surface or missing-external-dependency — always with the
   reason. A SKIP advances the barrier; it does not block.
 - Always include **What I ran** and **Evidence** — they are your section of the
   slice's validation record.
-</content>

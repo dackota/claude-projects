@@ -7,7 +7,7 @@ contract:
   actor: implementation-validator
   permitted-evidence: ["diff range (base...HEAD)", "changed files", "task acceptance criteria and 'what to build'"]
   blocked-actions: ["modify files", "see implementation rationale", "mutating git / push", "audit outside the diff"]
-  tool-scope: read-only          # read-only | write | deploy
+  tool-scope: read-only          # read-only | execute | write | deploy
   approval-rule: none            # review-only; the orchestrator acts on the verdict
   required-check: "emits the VERDICT block; BLOCK iff CRITICAL > 0"
   fallback: "read the code before declaring a criterion unmet; flag rather than pass on ambiguity"

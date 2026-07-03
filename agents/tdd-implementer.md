@@ -7,7 +7,7 @@ contract:
   actor: tdd-implementer
   permitted-evidence: ["acceptance criteria", "CONTEXT.md vocabulary", "relevant ADRs", "applicable coding standards (general + language-specific rules)", "the working directory (its worktree)", "test command", "HITL input the orchestrator gathered"]
   blocked-actions: ["interact with the user", "flip task status", "commit", "open PRs", "deploy", "work outside its worktree"]
-  tool-scope: write              # read-only | write | deploy
+  tool-scope: write              # read-only | execute | write | deploy
   approval-rule: "the orchestrator commits the slice; the acceptance, correctness + observability gates must PASS before done"
   required-check: "all behaviors GREEN via red-green-refactor; returns COMPLETE | PARTIAL | BLOCKED"
   fallback: "return BLOCKED on a genuine fork; never fake GREEN or claim done"

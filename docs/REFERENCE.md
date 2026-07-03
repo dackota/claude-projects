@@ -198,10 +198,10 @@ How it flows:
 gh pr create
   -> hook: verdict recorded for HEAD <sha>?
        yes -> honor it (PASS allow / CRITICAL block)
-       no  -> infra in diff?           -> BLOCK: security review required (any size)
-              code-only & <= 25 lines? -> allow (small change skips)
-              docs/config only?        -> allow
-              else (larger code)       -> BLOCK: security review required
+       no  -> infra in diff?                  -> BLOCK: security review required (any size)
+              code touches a trust boundary?  -> BLOCK: security review required (any size)
+              pure-logic code / docs / config? -> allow (the correctness gate carries
+                                                  the security-obligations ledger)
   /pr-security-review (run on block, or manually anytime):
      classify diff -> security-reviewer (security)
      -> verdict@<sha> in .git/pr-security-review/
@@ -209,7 +209,7 @@ gh pr create
      PASS     -> security summary folded into PR body, gh pr create allowed
 ```
 
-Security classification is path-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both — small code-only diffs skip (≤ 25 changed lines; override with `PR_SECURITY_MAX_SMALL_LINES`), as do docs/config-only diffs. You can run `/pr-security-review` by hand on any change, and a recorded verdict always wins. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
+Security classification is path- and content-based (`classify.sh`): app source → `security-review`; `.tf`/`.yaml`/`Dockerfile`/pipelines → `cloud-infra-security`; a mixed PR gets both. The skip keys on the **trust boundary** the diff touches, not its size: a pure-logic code diff skips at any size, while a diff whose added lines touch network/DB/exec/env/secrets/templates (a "surface" — marker set tunable via `PR_SECURITY_SURFACE_MARKERS`) is reviewed at any size; `.sql` and `.env*` files register a surface by type, JSON is content-scanned for IaC and secret markers, and docs-only diffs skip. You can run `/pr-security-review` by hand on any change, and a recorded verdict always wins. The gate covers CLI `gh pr create` only — `--web` and the GitHub UI bypass it.
 
 ## Phase skills
 

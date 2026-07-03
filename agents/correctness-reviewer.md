@@ -7,7 +7,7 @@ contract:
   actor: correctness-reviewer
   permitted-evidence: ["diff range (base...HEAD)", "changed files", "task 'what to build' description"]
   blocked-actions: ["modify files", "see implementation rationale", "mutating git / push", "audit outside the diff", "flag security issues (defer to security-reviewer)"]
-  tool-scope: read-only          # read-only | write | deploy
+  tool-scope: read-only          # read-only | execute | write | deploy
   approval-rule: none            # review-only; the orchestrator acts on the verdict
   required-check: "emits the VERDICT block; BLOCK iff CRITICAL > 0 (a diff-introduced correctness bug)"
   fallback: "read the surrounding code before flagging; when unsure a bug is real or diff-introduced, WARN (HIGH) rather than BLOCK"
@@ -149,4 +149,3 @@ Rules:
 - If the diff is clean: `VERDICT: PASS`, all counts `0`, the **What I validated**
   line, `_No correctness defects introduced by this diff._` under the findings
   heading, and the Security obligations section.
-</content>

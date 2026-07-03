@@ -7,7 +7,7 @@ contract:
   actor: security-reviewer
   permitted-evidence: ["diff range (base...HEAD)", "changed files", "applicable checklist(s): code and/or infra"]
   blocked-actions: ["modify files", "see implementation rationale", "mutating git / push", "audit outside the diff"]
-  tool-scope: read-only          # read-only | write | deploy
+  tool-scope: read-only          # read-only | execute | write | deploy
   approval-rule: none            # review-only; the calling session acts on the verdict
   required-check: "emits the VERDICT block; BLOCK iff CRITICAL > 0"
   fallback: "flag only issues the diff introduced or touched; flag rather than pass on ambiguity"

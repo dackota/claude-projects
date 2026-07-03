@@ -282,8 +282,8 @@ Fresh agents that never saw the build guard each slice at two moments: a **post-
 barrier** (`/next` runs acceptance + correctness always, runtime for runnable diffs,
 observability for service tasks — one parallel message; any BLOCK loops back to `tdd`
 before the task is `done`, a runtime SKIP counts as pass) and a **security gate** at
-`gh pr create` (required for infra at any size or code over ~25 lines; small code-only
-and docs-only skip; `--web`/GitHub UI bypass). The orchestrator writes one
+`gh pr create` (infra at any size and code touching a trust-boundary surface are
+reviewed; pure-logic and docs-only diffs skip; `--web`/GitHub UI bypass). The orchestrator writes one
 **validation record** per slice to `docs/validations/<task>.md`, a section per gate.
 Every review agent carries an `agent-controls` **operating contract** and is read-only
 where it reviews.

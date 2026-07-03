@@ -172,6 +172,7 @@ cmd_worktree() {
   fi
 
   git -C "$clone" fetch --all --prune
+  git -C "$clone" worktree prune 2>/dev/null || true
   local base; base="$(base_branch "$repo")"
   local wt="$WORKTREES_DIR/$task/$repo"
 
@@ -267,10 +268,13 @@ cmd_status() {
     repo="$(basename "$wt")"
     [[ -n "$only_task" && "$task" != "$only_task" ]] && continue
 
-    # fetch-always (once per repo per invocation)
+    # fetch-always (once per repo per invocation); prune stale worktree admin
+    # entries left by a hand-deleted worktree dir while we're here.
     case "$fetched" in
       *" $repo "*) ;;
-      *) git -C "$wt" fetch -q --all --prune 2>/dev/null || true; fetched="${fetched}${repo} " ;;
+      *) git -C "$wt" fetch -q --all --prune 2>/dev/null || true
+         git -C "$REPOS_DIR/$repo" worktree prune 2>/dev/null || true
+         fetched="${fetched}${repo} " ;;
     esac
 
     branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
@@ -322,6 +326,19 @@ cmd_remove() {
     clone="$REPOS_DIR/$repo"
     base="$(base_branch "$repo")"
 
+    # A stacked child records this branch as its upstream — deleting the parent
+    # branch would orphan the stack. Refuse without --force; warn when forced.
+    children="$(git -C "$clone" for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads 2>/dev/null \
+      | awk -v p="$task" '$2 == p {print $1}' | tr '\n' ' ')"
+    if [[ -n "${children// /}" ]]; then
+      if $force; then
+        warn "worktrees/$task/$repo: stacked children (${children% }) are being orphaned — re-point or sync them."
+      else
+        error "worktrees/$task/$repo: branch '$task' is the stacked base of: ${children% }. Sync/re-point or remove them first, or pass --force."
+        rc=1; continue
+      fi
+    fi
+
     if ! $force; then
       dirty="$(git -C "$wt" status --porcelain 2>/dev/null)"
       if [[ -n "$dirty" ]]; then
@@ -349,6 +366,8 @@ cmd_remove() {
     if git -C "$clone" show-ref --verify --quiet "refs/heads/$task"; then
       git -C "$clone" branch -D "$task" >/dev/null && info "Deleted local branch '$task' in repo '$repo'"
     fi
+    # Clear any stale admin entries (e.g. a worktree dir removed by hand).
+    git -C "$clone" worktree prune 2>/dev/null || true
   done
 
   # Drop the task dir if now empty.

@@ -62,7 +62,7 @@ the `/sync-status` **Pipeline health** surface rolls up:
   agent: implementation-validator   # which review/gate agent ran
   task: add-login-endpoint          # the task id under review
   verdict: PASS | BLOCK
-  critical: 0                       # counts as the agent reported them (BLOCKER count for otel)
+  critical: 0                       # counts as the agent reported them (BLOCKER for otel; observed runtime failures for runtime-validator)
   high: 0
   rework: 2                         # times this task looped back through this gate so far
   approver: null                    # named human who approved a gated action, else null

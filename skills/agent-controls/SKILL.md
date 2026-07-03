@@ -24,7 +24,7 @@ contract:
   actor: implementation-validator
   permitted-evidence: [diff range (base...HEAD), changed files, acceptance criteria]
   blocked-actions: [modify files, see implementation rationale, mutating git, network push]
-  tool-scope: read-only          # read-only | write | deploy
+  tool-scope: read-only          # read-only | execute | write | deploy
   approval-rule: none            # none for review-only agents
   required-check: "emits VERDICT block; BLOCK iff CRITICAL>0"
   fallback: "flag rather than pass on ambiguity"
