@@ -17,6 +17,33 @@ Test through **public interfaces / observable behavior**, not internal units:
 Avoid the anti-patterns: testing private methods, mocking internal collaborators, and
 tautological tests (asserting the implementation against its own formula).
 
+## Property / invariant tests (don't just tabulate examples)
+
+Example-based tests prove the cases you thought of. When a unit has an **invariant that
+must hold for _every_ input** — not just the handful you tabulated — assert that invariant
+directly over generated and adversarial inputs. For the right shape of code this is the
+single highest-leverage test you can write: it finds the input you *didn't* think of,
+before a reviewer (or production) does.
+
+Reach for a property/invariant test when the smell fits:
+
+- a **pure transformation** (data in → data out, no I/O) whose output carries a
+  **structural contract** — e.g. "every line of the diff starts with `+`/`-`/space", "the
+  summary counts equal the rendered counts", "`decode(encode(x)) == x`", "output is
+  sorted / deduplicated / valid UTF-8";
+- the input is **untrusted or unvalidated** — the caller can hand it anything the type
+  allows (empty, huge, malformed, missing a trailing newline);
+- the correct output is **expensive to hand-write** across many cases, but the *invariant*
+  is cheap to state once.
+
+Write it in the RED phase like any other test: state the invariant as a predicate, feed it
+generated inputs including the adversarial edges (empty, boundary, oversized, malformed),
+and let it search. One such test typically subsumes a whole family of example cases and
+catches the family member that would otherwise slip through. The tell that you need one:
+you catch yourself adding "…and also when the input is empty / huge / malformed" as
+separate example cases. Keep the example tests too, for specific behaviors and as readable
+documentation — the property test complements them, it doesn't replace them.
+
 ## Test-Driven Development
 
 MANDATORY workflow:

@@ -166,7 +166,12 @@ disposable. For each build:
    `CONTEXT.md` vocabulary, relevant ADRs, **the applicable coding standards (general +
    language-specific rules)**, **the project's security-posture list from `STATUS.md`**
    (so project-specific hardening reaches the build), the working directory, and the
-   test command. It derives the plan and runs the red-green-refactor loop, returning a
+   test command. **When the slice is a pure transformation with a structural output
+   invariant, or an untrusted input space** — the shape a diff / parser / encoder /
+   normalizer tends to have — name that invariant in the brief and ask for a
+   **property/invariant test** over generated + adversarial inputs up front, so the failure
+   class is caught in the build's RED phase rather than after a gate loop-back
+   (`rules/common/testing.md`). It derives the plan and runs the red-green-refactor loop, returning a
    `COMPLETE | PARTIAL | BLOCKED` summary. Review it: re-run the tests; check the tests
    are behavioral, not implementation-coupled; and **spot-verify the implementer's
    formatter/linter result** — it runs `gofmt`/`go vet`/`golangci-lint`,

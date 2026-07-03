@@ -92,7 +92,14 @@ validator follows. Two tiers:
    or state that make it misbehave? Follow the values, not just the shapes.
 3. For each finding, assign a severity (above), cite `path:line`, and state
    concretely what goes wrong and under what input/state.
-4. Apply the false-positive rules before finalizing.
+4. **Generalize each finding to its class.** A single failing input is usually one
+   instance of a broken invariant, not a lone typo — and a fix aimed only at that instance
+   tends to leave siblings that resurface as a *new* BLOCK on the next loop. So for every
+   CRITICAL, state the **invariant it violates** and the **full input class** that breaks
+   it (e.g. "any output line whose source text lacks a trailing newline", not just the one
+   value you found), so the fix can close the class at its root in one pass. Prefer a
+   property-style repro that spans the class over a single hand-picked example.
+5. Apply the false-positive rules before finalizing.
 
 ## Common false positives (verify context before flagging)
 
@@ -121,6 +128,8 @@ retry loop in fetch.go; ran the test suite read-only: 42/42 pass")>
 
 ### CRITICAL
 - `path:line` — <the bug>. Triggers when: <input/state>. Effect: <what goes wrong>.
+  Class: <the invariant it violates + the full input class that breaks it, so the fix
+  targets the class not just this input; omit only for a genuinely one-off bug>.
 
 ### HIGH
 - `path:line` — <bug or smell>. <why it matters>.
