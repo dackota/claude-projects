@@ -464,6 +464,17 @@ cmd_pr() {
     cor="$(grep -E '^correctness[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
     [[ "$acc" == "PASS" && "$cor" == "PASS" ]] || \
       die "Post-build barrier for HEAD is not PASS (acceptance=${acc:-none}, correctness=${cor:-none}) — close the flagged gaps (each fix is a new commit that re-runs the gate), then re-run."
+
+    # Honor a recorded integration-review verdict too — the Land-phase whole-branch
+    # lens for multi-slice PRs (see next/INTEGRATION-REVIEW.md). Honored-if-present
+    # (a recorded BLOCK can't be bypassed); the orchestrator decides when to run it.
+    local integration_file iv
+    integration_file="$gitdir/integration-review/$sha"
+    if [[ -f "$integration_file" ]]; then
+      iv="$(head -n1 "$integration_file" 2>/dev/null || echo BLOCK)"
+      [[ "$iv" == "PASS" ]] || \
+        die "Integration review for HEAD is '${iv:-none}' — reconcile the cross-slice defect with a corrective slice (which re-runs the review), then re-run."
+    fi
   fi
 
   # Default to --fill (title/body from commits) when the caller passes no gh args.

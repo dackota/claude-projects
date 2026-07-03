@@ -62,6 +62,18 @@ sha="$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)"
 
 verdict_file="$gitdir/barrier-review/$sha"
 
+# 0. Honor a recorded integration-review verdict for HEAD FIRST — the Land-phase
+#    whole-branch lens for multi-slice PRs (see next/INTEGRATION-REVIEW.md). Checked
+#    before the barrier verdict so a recorded integration BLOCK can't be routed around,
+#    even when acceptance + correctness are PASS. Single-line PASS|BLOCK, mirroring the
+#    security verdict. Honored-if-present only; the orchestrator decides when to run it.
+integration_file="$gitdir/integration-review/$sha"
+if [[ -f "$integration_file" ]]; then
+  iv="$(head -n1 "$integration_file" 2>/dev/null || echo BLOCK)"
+  [[ "$iv" == "PASS" ]] || \
+    block "integration review for HEAD ($sha) is '${iv:-none}' — the assembled branch has an unresolved cross-slice/integration defect (see next/INTEGRATION-REVIEW.md). Reconcile it with a corrective slice (a new commit re-runs the review), re-record the verdict, then re-run gh pr create."
+fi
+
 # 1. Honor an existing barrier verdict for HEAD.
 if [[ -f "$verdict_file" ]]; then
   acc="$(grep -E '^acceptance[[:space:]]' "$verdict_file" 2>/dev/null | head -n1 | awk '{print $2}')"

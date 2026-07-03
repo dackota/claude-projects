@@ -90,6 +90,12 @@ assert "default: tdd baseline is unconditional" "$(grep -q 'Observable by defaul
 assert "default: barrier-gate hook present"    "$([[ -f $TARGET/.claude/skills/journal/hooks/barrier-gate.sh ]] && echo true || echo false)"
 assert "default: barrier-gate hook wired"      "$(grep -q 'barrier-gate.sh' "$TARGET/.claude/settings.json" && echo true || echo false)"
 assert "default: preflight checks barrier-gate" "$(grep -q 'barrier-gate' "$TARGET/.claude/skills/next/next-preflight.sh" && echo true || echo false)"
+assert "default: integration-reviewer installed"  "$([[ -f $TARGET/.claude/agents/integration-reviewer.md ]] && echo true || echo false)"
+assert "default: INTEGRATION-REVIEW.md present"    "$([[ -f $TARGET/.claude/skills/next/INTEGRATION-REVIEW.md ]] && echo true || echo false)"
+assert "default: barrier-gate honors integration" "$(grep -q 'integration-review' "$TARGET/.claude/skills/journal/hooks/barrier-gate.sh" && echo true || echo false)"
+assert "default: repo.sh honors integration"      "$(grep -q 'integration-review' "$TARGET/scripts/repo.sh" && echo true || echo false)"
+assert "default: preflight checks integration-rev" "$(grep -q 'integration-reviewer' "$TARGET/.claude/skills/next/next-preflight.sh" && echo true || echo false)"
+assert "default: run-check audits integration-rev" "$(grep -q 'integration-reviewer' "$TARGET/.claude/skills/journal/hooks/run-check.sh" && echo true || echo false)"
 
 # ── dry-run creates nothing ───────────────────────────────────────────────────
 DRY_TARGET="${TMPDIR_BASE}/dry-run-test"

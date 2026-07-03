@@ -22,7 +22,7 @@ report() { echo "  [MISSING] $1" >&2; missing=$((missing + 1)); }
 [[ -f "$root/scripts/repo.sh" ]] || report "scripts/repo.sh (repo/worktree operations)"
 
 # Required gate + build agents.
-for a in tdd-implementer implementation-validator correctness-reviewer runtime-validator security-reviewer; do
+for a in tdd-implementer implementation-validator correctness-reviewer runtime-validator security-reviewer integration-reviewer; do
   [[ -f "$root/.claude/agents/${a}.md" ]] || report "agent: ${a}"
 done
 

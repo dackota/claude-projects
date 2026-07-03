@@ -6,6 +6,7 @@ agents:
   - implementation-validator
   - correctness-reviewer
   - runtime-validator
+  - integration-reviewer
 ---
 
 # /next — the workflow router
@@ -224,8 +225,12 @@ takes the sub-agent path.
   and/or the observability gate.)
 - **Land**: a task is `done` but not PR'd → open the PR with `scripts/repo.sh pr`,
   which self-enforces the recorded barrier verdict (acceptance + correctness PASS for
-  HEAD) and the security verdict before it will push; security itself runs at
-  `gh pr create`. If the task is
+  HEAD), the integration verdict (when recorded), and the security verdict before it
+  will push; security itself runs at `gh pr create`. **When this PR assembles more than
+  one slice** (a stack, or the last slice of a PRD/epic), first run the **integration
+  review** — the whole-branch consistency lens, run alongside the security review — per
+  **[INTEGRATION-REVIEW.md](./INTEGRATION-REVIEW.md)**; a single-slice PR skips it (the
+  per-slice barrier already covered that whole diff). If the task is
   a **release/deploy task**, also run **release-verify** — drive the shipped release
   against its live deployment (read-only) via `runtime-validator` in release mode.
   Follow **[RELEASE-VERIFY.md](./RELEASE-VERIFY.md)** for trigger detection, checklist
