@@ -23,10 +23,13 @@
 #      barrier lens; otherwise block). A recorded BLOCK can't be routed around by
 #      switching from `repo.sh pr` to a raw `gh pr create`.
 #   2. No verdict, and the PR is being created from a pipeline task worktree
-#      (cwd under worktrees/) -> BLOCK: a built slice must carry a barrier
-#      verdict for the acceptance + correctness "always" gates, whatever the
-#      diff touches (matching `repo.sh pr` and BARRIER.md). Fail closed if the
-#      gate agents aren't even installed (degraded install).
+#      (cwd under worktrees/). If the barrier workflow (the `next` skill) isn't
+#      installed, this hook — shipped with `journal`, a `next` dependency that's
+#      also installable standalone — isn't gating anything here, so allow. With
+#      `next` present -> BLOCK: a built slice must carry a barrier verdict for the
+#      acceptance + correctness "always" gates, whatever the diff touches
+#      (matching `repo.sh pr` and BARRIER.md). Fail closed if `next` is present
+#      but the gate agents aren't installed (degraded install).
 #   3. No verdict, not a task-worktree PR (inline /tdd or an ad-hoc PR) -> allow.
 #      Inline mode is human-supervised ("you are the reviewer"); security still
 #      gates it via pr-gate.sh. Record a verdict by hand to gate it here too.
@@ -81,6 +84,13 @@ esac
 # `repo.sh pr`.
 root="${CLAUDE_PROJECT_DIR:-}"
 [[ -z "$root" ]] && root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd 2>/dev/null || true)"
+
+# The barrier workflow ships with `next`; this hook ships with `journal` (a `next`
+# dependency that's also installable standalone with `repo`). Without `next` the
+# barrier isn't in use here, so don't gate — matching how rework-cap/run-check stay
+# inert without a tdd-implementer/gate spawn. With `next` present but the agents
+# missing, fall through to the fail-closed check below (a degraded `next` install).
+[[ -d "$root/.claude/skills/next" ]] || exit 0
 
 # Fail closed: a built slice can't have validly passed if the gate agents aren't
 # even installed. Security fails closed the same way (no reviewer -> no PASS verdict).

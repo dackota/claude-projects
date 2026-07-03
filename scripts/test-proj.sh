@@ -683,6 +683,55 @@ if command -v yq >/dev/null 2>&1 && [[ -d "$RT/worktrees/slice-2/remote" ]]; the
   assert "gate: task branch not force-reviewed"      "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "0" ]] && echo true || echo false)"
 fi
 
+# ── barrier-gate.sh: acceptance+correctness PR gate (worktree + next scoped) ──
+BARRIER_GATE="$RT/.claude/skills/journal/hooks/barrier-gate.sh"
+# A git repo whose path is under worktrees/ — the pipeline task-worktree shape.
+BG_WT="${TMPDIR_BASE}/bg/worktrees/slice-1/remote"
+mkdir -p "$BG_WT"
+git init -q "$BG_WT"
+git -C "$BG_WT" config user.email t@t.test
+git -C "$BG_WT" config user.name "Test"
+git -C "$BG_WT" config commit.gpgsign false
+echo base > "$BG_WT/f.txt"; git -C "$BG_WT" add -A; git -C "$BG_WT" commit -qm base
+BG_SHA="$(git -C "$BG_WT" rev-parse HEAD)"
+BG_VDIR="$(git -C "$BG_WT" rev-parse --absolute-git-dir)/barrier-review"
+bgate() { # bgate <workspace-root> <cwd> -> exit code
+  local rc=0
+  echo "{\"tool_input\":{\"command\":\"gh pr create -t x\"},\"cwd\":\"$2\"}" \
+    | CLAUDE_PROJECT_DIR="$1" bash "$BARRIER_GATE" >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+# Workspaces distinguished only by which barrier pieces they carry.
+BG_NONEXT="${TMPDIR_BASE}/bg-nonext"; mkdir -p "$BG_NONEXT/.claude/skills/journal"
+BG_FULL="${TMPDIR_BASE}/bg-full"; mkdir -p "$BG_FULL/.claude/skills/next" "$BG_FULL/.claude/agents"
+BG_DEGRADED="${TMPDIR_BASE}/bg-degraded"; mkdir -p "$BG_DEGRADED/.claude/skills/next" "$BG_DEGRADED/.claude/agents"
+: > "$BG_FULL/.claude/agents/implementation-validator.md"
+: > "$BG_FULL/.claude/agents/correctness-reviewer.md"
+
+rm -rf "$BG_VDIR"
+# The fix: without the barrier workflow (`next`) installed, the journal-shipped hook
+# stays inert — a supported `--skills journal,repo` subset can't be permanently blocked.
+assert "barrier-gate: inert without next skill"      "$([[ "$(bgate "$BG_NONEXT" "$BG_WT")" == "0" ]] && echo true || echo false)"
+# `next` present but gate agents missing -> degraded install -> fail closed.
+assert "barrier-gate: fail-closed on degraded next"  "$([[ "$(bgate "$BG_DEGRADED" "$BG_WT")" == "2" ]] && echo true || echo false)"
+# `next` + both agents present, no recorded verdict -> a built slice must carry one.
+assert "barrier-gate: blocks worktree PR w/o verdict" "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "2" ]] && echo true || echo false)"
+# A recorded verdict is honored ahead of every other check (independent of next).
+mkdir -p "$BG_VDIR"
+printf 'acceptance PASS\ncorrectness PASS\n' > "$BG_VDIR/$BG_SHA"
+assert "barrier-gate: honors PASS/PASS verdict"      "$([[ "$(bgate "$BG_NONEXT" "$BG_WT")" == "0" ]] && echo true || echo false)"
+printf 'acceptance PASS\ncorrectness BLOCK\n' > "$BG_VDIR/$BG_SHA"
+assert "barrier-gate: blocks recorded non-PASS"      "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "2" ]] && echo true || echo false)"
+rm -rf "$BG_VDIR"
+# Inline / ad-hoc PR (cwd not under worktrees/) is allowed even with next installed.
+BG_INLINE="${TMPDIR_BASE}/bg-inline"
+git init -q "$BG_INLINE"
+git -C "$BG_INLINE" config user.email t@t.test
+git -C "$BG_INLINE" config user.name "Test"
+git -C "$BG_INLINE" config commit.gpgsign false
+echo base > "$BG_INLINE/f.txt"; git -C "$BG_INLINE" add -A; git -C "$BG_INLINE" commit -qm base
+assert "barrier-gate: allows inline non-worktree"    "$([[ "$(bgate "$BG_FULL" "$BG_INLINE")" == "0" ]] && echo true || echo false)"
+
 # ── next skill: orchestrator install + dependency resolution ──────────────────
 NT="${TMPDIR_BASE}/next-test"
 bash "$PROJ" "next-test" --dir "$TMPDIR_BASE" --skills next >/dev/null
