@@ -121,6 +121,9 @@ wire_skill_hooks() {
       add_hook "$settings" Stop "" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/journal-stop.sh' true "Unlogged journal events detected"
       # After a review/gate sub-agent (Task) finishes, nudge a `run` audit entry.
       add_hook "$settings" PostToolUse "Task" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/run-check.sh' true "Gate run needs a journal entry"
+      # Before re-spawning tdd-implementer, refuse if a gate has BLOCKed the active
+      # task more than validation.max_rework times (barrier rework cap → escalate).
+      add_hook "$settings" PreToolUse "Task" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/rework-cap.sh' true "Rework cap reached"
       ;;
     sync-status)
       # Synchronous (no asyncRewake): block once at the real stop when STATUS.md
@@ -577,6 +580,7 @@ observability:
   service_name: ""      # resource attribute; defaults to the project name
 validation:
   run_cmd: ""           # optional: how the runtime gate boots/drives the artifact; inferred per project type when empty
+  max_rework: 3         # barrier rework cap: max BLOCKs at one gate before a slice escalates to blocked
 EOF
 )"
 

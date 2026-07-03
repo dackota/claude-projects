@@ -112,6 +112,14 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
   ultimately passed. This keeps the loop-back cheap and local — the task never reaches
   a PR (or even `done`) until it passes.
 
+**The loop is bounded — it does not run forever.** A `rework-cap.sh` PreToolUse hook
+refuses to re-spawn `tdd-implementer` once any single gate has BLOCKed this task more
+than `validation.max_rework` times (default **3** — the 3rd rework is allowed, a 4th is
+refused; counted per gate from the `run` entries). When the cap fires, do not fight it:
+a gate that keeps blocking the same slice signals a **wrong seam, a flaky test, or an
+impossible criterion**, not something another build loop will fix. Flip the task to
+`blocked`, write a `blocker` entry with the recurring finding, and hand it to a human.
+
 ## Inline (`/tdd`) mode
 
 When `/tdd` is invoked **by hand**, the loop runs inline in the main agent (Opus) and
