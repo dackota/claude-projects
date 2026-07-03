@@ -121,14 +121,16 @@ features for future slices), not less.
    natural. Run the full test command after each refactor step; it must stay GREEN.
 4. **Format, lint, then final verification.** Once GREEN, run the project's formatter
    and linter/vet over the files you changed, fix what they report, and re-run the full
-   test command. Infer the toolchain the same way you inferred the test command — from
-   the project's config and language:
+   test command. **Prefer the commands declared in `project.yaml`** —
+   `validation.format_cmd`, `validation.lint_cmd`, `validation.test_cmd` — when set;
+   they make the toolchain explicit and language-agnostic. Only when a field is empty,
+   **infer** it from the project's config and language:
    - **Go** — `gofmt -l` / `goimports`, `go vet ./...`, and `golangci-lint run` when a
      `.golangci.*` config is present.
    - **Python** — `ruff check` / `black --check`, and `mypy` when configured.
    - Other languages — the project's configured formatter/linter (e.g. `prettier` +
      `eslint`).
-   Run only what the project actually has; skip a tool that isn't installed/configured and
+   Run only what the project actually has; skip a tool that isn't declared/installed and
    note that you skipped it. Capture the exact final test-command output (pass/fail counts)
    for your summary. A clean formatter + linter is part of "done" — the orchestrator
    re-checks it at the gate.

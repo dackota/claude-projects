@@ -644,6 +644,9 @@ observability:
   service_name: ""      # resource attribute; defaults to the project name
 validation:
   run_cmd: ""           # optional: how the runtime gate boots/drives the artifact; inferred per project type when empty
+  format_cmd: ""        # optional: formatter command (e.g. "gofmt -w ." / "ruff format"); inferred per language when empty
+  lint_cmd: ""          # optional: linter/vet command (e.g. "go vet ./..." / "ruff check"); inferred per language when empty
+  test_cmd: ""          # optional: full test command (e.g. "go test ./..." / "pytest"); inferred per language when empty
   max_rework: 3         # barrier rework cap: max BLOCKs at one gate before a slice escalates to blocked
 EOF
 )"

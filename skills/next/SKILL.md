@@ -184,9 +184,10 @@ disposable. For each build:
    (`rules/common/testing.md`). It derives the plan and runs the red-green-refactor loop, returning a
    `COMPLETE | PARTIAL | BLOCKED` summary. Review it: re-run the tests; check the tests
    are behavioral, not implementation-coupled; and **spot-verify the implementer's
-   formatter/linter result** — it runs `gofmt`/`go vet`/`golangci-lint`,
-   `ruff`/`black`/`mypy` (etc.) at close-out and reports clean under **Format & lint**,
-   so confirm rather than re-run the whole thing. Only if a spot-check shows it is
+   formatter/linter result** — it runs the project's declared
+   `validation.format_cmd`/`lint_cmd`/`test_cmd` when set, else the inferred toolchain
+   (`gofmt`/`go vet`/`golangci-lint`, `ruff`/`black`/`mypy`, etc.), at close-out and
+   reports clean under **Format & lint**, so confirm rather than re-run the whole thing. Only if a spot-check shows it is
    actually dirty (a rare miss) record a `format-lint` `run` entry and re-spawn
    `tdd-implementer` to clean it — no full BLOCK-and-rebuild for formatting. On
    `BLOCKED` — a fork that surfaced mid-build — gather any further input the user needs
