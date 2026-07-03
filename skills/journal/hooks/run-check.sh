@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# PostToolUse hook: fires after a Task (sub-agent) tool call.
-# When a review/gate agent finishes: (1) record a "gate ran" marker so the Stop
-# hook can enforce that a `run` entry was actually written (barrier audit
-# completeness — a missing entry is an error, not just a nudge), and (2) nudge
-# Claude to append the entry now. Exits 2 to re-wake Claude.
+# PostToolUse hook: fires when a Task (sub-agent) tool call returns — at completion
+# for a foreground gate, at dispatch for a backgrounded one (the async launch
+# returns immediately). For a review/gate agent it: (1) records a "gate ran" marker
+# so the Stop hook can enforce that a `run` entry was actually written (barrier audit
+# completeness — a missing entry is an error, not just a nudge), and (2) nudges Claude
+# to append the entry once the gate's verdict is in. Exits 2 to re-wake Claude.
 
 set -uo pipefail
 
@@ -43,5 +44,5 @@ if [[ ! -s "$pending" ]]; then
 fi
 printf '%s\n' "$agent" >> "$pending"
 
-echo "Gate agent '${agent}' finished — append a /journal 'run' entry now (type=run with structured fields: agent, task, verdict [PASS|BLOCK|SKIP], critical, high, rework, approver) so the audit trail and STATUS.md Pipeline health stay current. The Stop hook will refuse to stop until every gate run has a matching run entry."
+echo "Gate agent '${agent}' was dispatched — once it returns its VERDICT, append a /journal 'run' entry (type=run with structured fields: agent, task, verdict [PASS|BLOCK|SKIP], critical, high, rework, approver) so the audit trail and STATUS.md Pipeline health stay current. If it was spawned in the background, wait for its completion notification to read the verdict — do NOT fetch a still-running gate's output (that returns its raw transcript, not a verdict, and burns context). The Stop hook will refuse to stop until every gate run has a matching run entry."
 exit 2
