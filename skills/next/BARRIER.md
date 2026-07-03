@@ -69,9 +69,12 @@ After a gate agent returns — PASS, BLOCK, or SKIP — append a `run` journal e
 (`type: run`) with its `agent`, `task`, `verdict`, the `critical`/`high` counts it
 reported (the BLOCKER count for the observability gate; none for a runtime SKIP), the
 task's `rework` count so far (how many times it has looped back through this gate), and
-`approver` (null unless a named human approved a gated action). The `run-check.sh` hook
-nudges you when a review agent finishes; these entries feed `STATUS.md`'s **Pipeline
-health**. The security gate at `gh pr create` records its own `run` entry the same way.
+`approver` (null unless a named human approved a gated action). These are **structured
+fields, not prose**: the `run-check.sh` hook records that a gate ran and nudges you, and
+the `Stop` hook then refuses to stop until every recorded gate run has a matching,
+well-formed `run` entry (a missing or prose-only entry is an error, not just a nudge).
+These entries feed `STATUS.md`'s **Pipeline health**. The security gate at `gh pr create`
+records its own `run` entry the same way.
 
 The validation record is the **single home** for gate detail — one record per slice,
 each gate a section. `run` entries stay a terse one-line metric (gate · SHA · verdict ·
