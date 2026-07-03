@@ -14,7 +14,7 @@ agent=$(echo "$input" | jq -r '.tool_input.subagent_type // ""' 2>/dev/null || e
 [[ -z "$agent" ]] && exit 0
 
 case "$agent" in
-  implementation-validator|correctness-reviewer|runtime-validator|security-reviewer|otel-observability-engineer)
+  implementation-validator|correctness-reviewer|runtime-validator|security-reviewer|otel-observability-engineer|integration-reviewer)
     ;;
   *)
     exit 0
