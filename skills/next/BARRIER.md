@@ -136,7 +136,10 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
 **The loop is bounded — it does not run forever.** A `rework-cap.sh` PreToolUse hook
 refuses to re-spawn `tdd-implementer` once any single gate has BLOCKed this task more
 than `validation.max_rework` times (default **3** — the 3rd rework is allowed, a 4th is
-refused; counted per gate from the `run` entries). When the cap fires, do not fight it:
+refused; counted per gate from the `run` entries). The count is scoped to the **current
+build episode**: a gate's own PASS ends its rework streak and resets its counter, so a
+task reopened long after it passed (a security reopen, a manual reopen) starts fresh
+rather than inheriting the earlier episode's BLOCK count. When the cap fires, do not fight it:
 a gate that keeps blocking the same slice signals a **wrong seam, a flaky test, or an
 impossible criterion**, not something another build loop will fix. Flip the task to
 `blocked`, write a `blocker` entry with the recurring finding, and hand it to a human.
