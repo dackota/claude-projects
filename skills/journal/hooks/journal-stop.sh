@@ -82,7 +82,8 @@ fi
 # session-tagged — so under genuinely concurrent sessions the completeness count is
 # best-effort; it can only relax, never false-block a healthy session.) Best-effort
 # sweep of orphans older than a day keeps the state dir from accumulating dead files.
-find "$root/.claude/state" -maxdepth 1 -type f -name 'pending-*' -mtime +1 -delete 2>/dev/null || true
+find "$root/.claude/state" -maxdepth 1 -type f -name 'pending-*' -mtime +1 \
+  -not -name "pending-gate-runs$sfx" -not -name "pending-baseline$sfx" -delete 2>/dev/null || true
 pending="$root/.claude/state/pending-gate-runs$sfx"
 baseline="$root/.claude/state/pending-baseline$sfx"
 if [[ -s "$pending" ]]; then

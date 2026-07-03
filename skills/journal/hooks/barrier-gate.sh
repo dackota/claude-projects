@@ -23,9 +23,10 @@
 #      barrier lens; otherwise block). A recorded BLOCK can't be routed around by
 #      switching from `repo.sh pr` to a raw `gh pr create`.
 #   2. No verdict, and the PR is being created from a pipeline task worktree
-#      (cwd under worktrees/) whose diff touches code/infra/surface -> BLOCK: a
-#      built slice must carry a barrier verdict. Fail closed if the gate agents
-#      aren't even installed (degraded install).
+#      (cwd under worktrees/) -> BLOCK: a built slice must carry a barrier
+#      verdict for the acceptance + correctness "always" gates, whatever the
+#      diff touches (matching `repo.sh pr` and BARRIER.md). Fail closed if the
+#      gate agents aren't even installed (degraded install).
 #   3. No verdict, not a task-worktree PR (inline /tdd or an ad-hoc PR) -> allow.
 #      Inline mode is human-supervised ("you are the reviewer"); security still
 #      gates it via pr-gate.sh. Record a verdict by hand to gate it here too.
@@ -74,19 +75,12 @@ case "$cwd/" in
   *) exit 0 ;;                      # inline / ad-hoc — human-supervised; allow
 esac
 
-# It's a task-worktree PR. Classify the diff; a docs/config-only slice has no
-# behavior to validate (parity with the runtime gate's SKIP and the security skip).
+# It's a task-worktree PR with no recorded barrier verdict. Acceptance + correctness
+# are the barrier's two "always" gates (BARRIER.md) — they run on every built slice,
+# docs/config-only included — so require the verdict unconditionally, matching
+# `repo.sh pr`.
 root="${CLAUDE_PROJECT_DIR:-}"
 [[ -z "$root" ]] && root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd 2>/dev/null || true)"
-classify="$root/.claude/skills/pr-security-review/classify.sh"
-base="$(git -C "$cwd" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
-[[ -z "$base" ]] && base="origin/main"
-
-if [[ -f "$classify" ]]; then
-  dims="$( cd "$cwd" && bash "$classify" "$base" 2>/dev/null || true )"
-  [[ -z "$dims" ]] && exit 0        # docs/config-only — nothing to validate; allow
-fi
-# classify missing (degraded install) OR the diff touches code/infra/surface -> require.
 
 # Fail closed: a built slice can't have validly passed if the gate agents aren't
 # even installed. Security fails closed the same way (no reviewer -> no PASS verdict).
