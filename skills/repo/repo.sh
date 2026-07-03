@@ -449,14 +449,22 @@ cmd_pr() {
   # writes this verdict after the barrier gates return — see next/BARRIER.md). The raw
   # `gh pr create` path is gated by barrier-gate.sh; repo.sh invokes gh internally, so
   # it enforces here.
-  local barrier_file acc cor
-  barrier_file="$gitdir/barrier-review/$sha"
-  [[ -f "$barrier_file" ]] || \
-    die "No post-build barrier verdict for HEAD ($sha). Run the acceptance + correctness gates via /next before opening the PR (see next/BARRIER.md)."
-  acc="$(grep -E '^acceptance[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
-  cor="$(grep -E '^correctness[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
-  [[ "$acc" == "PASS" && "$cor" == "PASS" ]] || \
-    die "Post-build barrier for HEAD is not PASS (acceptance=${acc:-none}, correctness=${cor:-none}) — close the flagged gaps (each fix is a new commit that re-runs the gate), then re-run."
+  #
+  # Gated on `next`-presence, matching barrier-gate.sh: the barrier workflow ships with
+  # `next`. A subset install like `--skills repo,pr-security-review` has the security
+  # machinery but no way to produce a barrier verdict (no next, no gate agents, no
+  # orchestrator), so requiring one there would wrongly break `repo.sh pr`. With `next`
+  # installed, the requirement stands.
+  if [[ -d "$ROOT/.claude/skills/next" ]]; then
+    local barrier_file acc cor
+    barrier_file="$gitdir/barrier-review/$sha"
+    [[ -f "$barrier_file" ]] || \
+      die "No post-build barrier verdict for HEAD ($sha). Run the acceptance + correctness gates via /next before opening the PR (see next/BARRIER.md)."
+    acc="$(grep -E '^acceptance[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
+    cor="$(grep -E '^correctness[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
+    [[ "$acc" == "PASS" && "$cor" == "PASS" ]] || \
+      die "Post-build barrier for HEAD is not PASS (acceptance=${acc:-none}, correctness=${cor:-none}) — close the flagged gaps (each fix is a new commit that re-runs the gate), then re-run."
+  fi
 
   # Default to --fill (title/body from commits) when the caller passes no gh args.
   [[ ${#passthru[@]} -eq 0 ]] && passthru=(--fill)
