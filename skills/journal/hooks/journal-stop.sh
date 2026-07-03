@@ -77,13 +77,21 @@ fi
 # ── 2. audit completeness — recorded gate runs must each have a run entry ─────
 # Session-scoped markers (run-check.sh writes the same names): a session reconciles
 # against its OWN pending marker, so an orphaned marker from a crashed/interrupted
-# session no longer blocks or is inherited by a different session. (The count itself
-# is still read from the global journal run-entry total — run entries aren't
-# session-tagged — so under genuinely concurrent sessions the completeness count is
-# best-effort; it can only relax, never false-block a healthy session.) Best-effort
-# sweep of orphans older than a day keeps the state dir from accumulating dead files.
-find "$root/.claude/state" -maxdepth 1 -type f -name 'pending-*' -mtime +1 \
-  -not -name "pending-gate-runs$sfx" -not -name "pending-baseline$sfx" -delete 2>/dev/null || true
+# session is inert — no other session ever reads it. (The count is read from the
+# global journal run-entry total — run entries aren't session-tagged — so under
+# genuinely concurrent sessions the completeness count is best-effort; it can only
+# relax, never false-block a healthy session.)
+#
+# We deliberately do NOT age-sweep other sessions' markers. A prior version ran
+# `find … -mtime +1 -delete` (excluding only the current session's own files), but
+# "aged" is not "dead": a concurrent session can legitimately sit open past any age
+# threshold (a weekend pause) with a gate run still unlogged. Deleting its live
+# pending marker would make that session's own next Stop see no marker, skip this
+# completeness check, and exit without the required `run` entry — reintroducing the
+# exact audit gap this mechanism exists to close. Orphans are inert and tiny, so
+# leaving them is safe; the current session still clears its own markers on a clean
+# reconcile below. (Cleaning up truly-dead orphans, if ever wanted, belongs in an
+# explicit liveness-aware sweep — not an mtime heuristic over shared per-session state.)
 pending="$root/.claude/state/pending-gate-runs$sfx"
 baseline="$root/.claude/state/pending-baseline$sfx"
 if [[ -s "$pending" ]]; then
