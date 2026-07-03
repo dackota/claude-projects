@@ -444,6 +444,20 @@ cmd_pr() {
   [[ "$verdict" == "PASS" ]] || \
     die "PR review verdict for HEAD is '$verdict' — resolve the CRITICAL findings (each fix is a new commit, re-reviewed), then re-run."
 
+  # Self-enforce the post-build barrier the same way: a task-worktree PR is a built
+  # slice, so acceptance + correctness must be recorded PASS for HEAD (the orchestrator
+  # writes this verdict after the barrier gates return — see next/BARRIER.md). The raw
+  # `gh pr create` path is gated by barrier-gate.sh; repo.sh invokes gh internally, so
+  # it enforces here.
+  local barrier_file acc cor
+  barrier_file="$gitdir/barrier-review/$sha"
+  [[ -f "$barrier_file" ]] || \
+    die "No post-build barrier verdict for HEAD ($sha). Run the acceptance + correctness gates via /next before opening the PR (see next/BARRIER.md)."
+  acc="$(grep -E '^acceptance[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
+  cor="$(grep -E '^correctness[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
+  [[ "$acc" == "PASS" && "$cor" == "PASS" ]] || \
+    die "Post-build barrier for HEAD is not PASS (acceptance=${acc:-none}, correctness=${cor:-none}) — close the flagged gaps (each fix is a new commit that re-runs the gate), then re-run."
+
   # Default to --fill (title/body from commits) when the caller passes no gh args.
   [[ ${#passthru[@]} -eq 0 ]] && passthru=(--fill)
 

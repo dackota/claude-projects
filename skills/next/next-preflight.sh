@@ -33,7 +33,7 @@ done
 
 # Required hooks wired in settings.json (name-based; independent of jq).
 if [[ -f "$settings" ]]; then
-  for h in run-check rework-cap journal-stop pr-gate git-guard sync-status-stop; do
+  for h in run-check rework-cap barrier-gate journal-stop pr-gate git-guard sync-status-stop; do
     grep -q "${h}" "$settings" || report "hook wiring: ${h}"
   done
 else

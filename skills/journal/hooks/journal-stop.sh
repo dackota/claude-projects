@@ -10,8 +10,16 @@
 # Resolves paths against CLAUDE_PROJECT_DIR (BASH_SOURCE fallback) — Stop hooks do
 # NOT reliably run from the project root.
 
+# Read the Stop-hook payload for the session id (used to scope the audit markers).
+input="$(cat 2>/dev/null || true)"
+
 root="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 journal="$root/journal.yaml"
+
+# Session id, matching run-check.sh's scheme (empty suffix when absent; sanitized).
+sid="$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || echo "")"
+sid="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9._-' '_')"
+sfx=""; [[ -n "$sid" ]] && sfx=".$sid"
 
 # No journal yet → nothing to check.
 [[ -f "$journal" ]] || exit 0
@@ -67,8 +75,16 @@ if [[ -n "$problems" ]]; then
 fi
 
 # ── 2. audit completeness — recorded gate runs must each have a run entry ─────
-pending="$root/.claude/state/pending-gate-runs"
-baseline="$root/.claude/state/pending-baseline"
+# Session-scoped markers (run-check.sh writes the same names): a session reconciles
+# against its OWN pending marker, so an orphaned marker from a crashed/interrupted
+# session no longer blocks or is inherited by a different session. (The count itself
+# is still read from the global journal run-entry total — run entries aren't
+# session-tagged — so under genuinely concurrent sessions the completeness count is
+# best-effort; it can only relax, never false-block a healthy session.) Best-effort
+# sweep of orphans older than a day keeps the state dir from accumulating dead files.
+find "$root/.claude/state" -maxdepth 1 -type f -name 'pending-*' -mtime +1 -delete 2>/dev/null || true
+pending="$root/.claude/state/pending-gate-runs$sfx"
+baseline="$root/.claude/state/pending-baseline$sfx"
 if [[ -s "$pending" ]]; then
   ran=$(grep -c . "$pending" 2>/dev/null || true);   ran=${ran:-0}
   base=$(cat "$baseline" 2>/dev/null || echo 0);      base=${base:-0}

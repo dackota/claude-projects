@@ -222,8 +222,10 @@ takes the sub-agent path.
   (step 4) on the new `HEAD` before the task can move on. ("Post-build gate" here
   means any barrier gate — the acceptance validator, the correctness reviewer,
   and/or the observability gate.)
-- **Land**: a task is `done` but not PR'd → open the PR (acceptance and correctness
-  are already validated and recorded; security runs at `gh pr create`). If the task is
+- **Land**: a task is `done` but not PR'd → open the PR with `scripts/repo.sh pr`,
+  which self-enforces the recorded barrier verdict (acceptance + correctness PASS for
+  HEAD) and the security verdict before it will push; security itself runs at
+  `gh pr create`. If the task is
   a **release/deploy task**, also run **release-verify** — drive the shipped release
   against its live deployment (read-only) via `runtime-validator` in release mode.
   Follow **[RELEASE-VERIFY.md](./RELEASE-VERIFY.md)** for trigger detection, checklist
