@@ -164,6 +164,147 @@ assert "run-check: runtime-validator in cases"      "$(grep -q 'runtime-validato
 # supersession retired from the journal type enum table (kept only as a note)
 assert "journal skill: supersession off enum table" "$(! grep -qE '^\|[[:space:]]*.supersession. ' "$RT/.claude/skills/journal/SKILL.md" && echo true || echo false)"
 
+# ── A1: run-entry schema + barrier-audit enforcement (journal hooks) ──────────
+STOP_HOOK="$RT/.claude/skills/journal/hooks/journal-stop.sh"
+RUN_HOOK="$RT/.claude/skills/journal/hooks/run-check.sh"
+
+# stopcheck <workspace-dir> -> exit code of the Stop hook for that workspace
+stopcheck() {
+  local rc=0
+  CLAUDE_PROJECT_DIR="$1" bash "$STOP_HOOK" </dev/null >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+# gaterun <workspace-dir> <agent> -> simulate a gate sub-agent finishing
+gaterun() {
+  echo "{\"tool_input\":{\"subagent_type\":\"$2\"},\"cwd\":\"$1\"}" \
+    | CLAUDE_PROJECT_DIR="$1" bash "$RUN_HOOK" >/dev/null 2>&1 || true
+}
+
+# schema doc must admit SKIP (the runtime gate's verdict)
+assert "journal skill: verdict enum includes SKIP" \
+  "$(grep -qE 'verdict:.*\bSKIP\b' "$RT/.claude/skills/journal/SKILL.md" && echo true || echo false)"
+
+# a well-formed run entry (all required fields) passes the Stop gate
+FX_OK="${TMPDIR_BASE}/a1-ok"; mkdir -p "$FX_OK"
+cat > "$FX_OK/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: correctness-reviewer
+  task: add-login-endpoint
+  verdict: PASS
+  critical: 0
+  high: 0
+  rework: 0
+  summary: correctness-reviewer PASS on add-login-endpoint
+  refs: [add-login-endpoint]
+EOF
+assert "stop: well-formed run entry passes"        "$([[ "$(stopcheck "$FX_OK")" == "0" ]] && echo true || echo false)"
+
+# verdict SKIP is valid (runtime gate emits it)
+FX_SKIP="${TMPDIR_BASE}/a1-skip"; mkdir -p "$FX_SKIP"
+cat > "$FX_SKIP/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: runtime-validator
+  task: pure-lib
+  verdict: SKIP
+  critical: 0
+  high: 0
+  rework: 0
+  summary: runtime SKIP — no runnable surface
+  refs: [pure-lib]
+EOF
+assert "stop: verdict SKIP accepted"               "$([[ "$(stopcheck "$FX_SKIP")" == "0" ]] && echo true || echo false)"
+
+# a prose-only run entry (the drift we found) is rejected
+FX_PROSE="${TMPDIR_BASE}/a1-prose"; mkdir -p "$FX_PROSE"
+cat > "$FX_PROSE/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  summary: >-
+    correctness-reviewer BLOCK with 2 CRITICAL on manifestdiff; looping back.
+  refs: [manifestdiff-module]
+EOF
+assert "stop: prose-only run entry blocked"        "$([[ "$(stopcheck "$FX_PROSE")" == "2" ]] && echo true || echo false)"
+
+# an invalid verdict value is rejected
+FX_BADV="${TMPDIR_BASE}/a1-badv"; mkdir -p "$FX_BADV"
+cat > "$FX_BADV/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: implementation-validator
+  task: t
+  verdict: MAYBE
+  critical: 0
+  high: 0
+  rework: 0
+  summary: bad verdict
+EOF
+assert "stop: invalid verdict blocked"             "$([[ "$(stopcheck "$FX_BADV")" == "2" ]] && echo true || echo false)"
+
+# non-run entries are exempt from the run schema
+FX_NONRUN="${TMPDIR_BASE}/a1-nonrun"; mkdir -p "$FX_NONRUN"
+cat > "$FX_NONRUN/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: done
+  summary: slice built and gated
+  refs: [x]
+- date: 2026-07-03
+  type: decision
+  summary: chose approach A
+EOF
+assert "stop: non-run entries exempt"              "$([[ "$(stopcheck "$FX_NONRUN")" == "0" ]] && echo true || echo false)"
+
+# run-check.sh drops a pending marker for a gate agent, none for others
+FX_MARK="${TMPDIR_BASE}/a1-mark"; mkdir -p "$FX_MARK"; printf '[]\n' > "$FX_MARK/journal.yaml"
+gaterun "$FX_MARK" correctness-reviewer
+assert "run-check: gate run drops marker"          "$([[ -s "$FX_MARK/.claude/state/pending-gate-runs" ]] && echo true || echo false)"
+
+FX_NOMARK="${TMPDIR_BASE}/a1-nomark"; mkdir -p "$FX_NOMARK"; printf '[]\n' > "$FX_NOMARK/journal.yaml"
+gaterun "$FX_NOMARK" tdd-implementer
+assert "run-check: non-gate agent drops no marker" "$([[ ! -s "$FX_NOMARK/.claude/state/pending-gate-runs" ]] && echo true || echo false)"
+
+# barrier-audit completeness: a recorded gate run with no run entry blocks Stop
+assert "stop: gate ran but no entry blocks"        "$([[ "$(stopcheck "$FX_MARK")" == "2" ]] && echo true || echo false)"
+
+# once the matching run entry exists, Stop reconciles and clears the markers
+cat > "$FX_MARK/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: correctness-reviewer
+  task: t
+  verdict: BLOCK
+  critical: 1
+  high: 0
+  rework: 0
+  summary: correctness BLOCK (1 CRITICAL)
+EOF
+assert "stop: entry written reconciles audit"      "$([[ "$(stopcheck "$FX_MARK")" == "0" ]] && echo true || echo false)"
+assert "stop: reconcile clears pending markers"    "$([[ ! -s "$FX_MARK/.claude/state/pending-gate-runs" ]] && echo true || echo false)"
+
+# adversarial: a malformed run entry among well-formed ones is still caught
+FX_MULTI="${TMPDIR_BASE}/a1-multi"; mkdir -p "$FX_MULTI"
+cat > "$FX_MULTI/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: implementation-validator
+  task: a
+  verdict: PASS
+  critical: 0
+  high: 0
+  rework: 0
+  summary: ok
+- date: 2026-07-03
+  type: run
+  summary: prose only, no structured fields
+EOF
+assert "stop: malformed entry among valid caught"  "$([[ "$(stopcheck "$FX_MULTI")" == "2" ]] && echo true || echo false)"
+
+# adversarial: malformed final entry with NO trailing newline (END-flush path)
+FX_NONL="${TMPDIR_BASE}/a1-nonl"; mkdir -p "$FX_NONL"
+printf -- '- date: 2026-07-03\n  type: run\n  summary: prose only, no trailing newline' > "$FX_NONL/journal.yaml"
+assert "stop: malformed no-trailing-newline caught" "$([[ "$(stopcheck "$FX_NONL")" == "2" ]] && echo true || echo false)"
+
 # ── repo.sh lifecycle against a throwaway remote ──────────────────────────────
 if command -v yq >/dev/null 2>&1; then
   REMOTE="${TMPDIR_BASE}/remote.git"
