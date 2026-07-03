@@ -305,6 +305,81 @@ FX_NONL="${TMPDIR_BASE}/a1-nonl"; mkdir -p "$FX_NONL"
 printf -- '- date: 2026-07-03\n  type: run\n  summary: prose only, no trailing newline' > "$FX_NONL/journal.yaml"
 assert "stop: malformed no-trailing-newline caught" "$([[ "$(stopcheck "$FX_NONL")" == "2" ]] && echo true || echo false)"
 
+# ── A2: rework cap (rework-cap.sh) — PreToolUse on Task ───────────────────────
+CAP_HOOK="$RT/.claude/skills/journal/hooks/rework-cap.sh"
+assert "rework-cap: hook installed"                "$([[ -f $CAP_HOOK ]] && echo true || echo false)"
+assert "rework-cap: PreToolUse Task hook wired"    "$([[ "$(count_cmd rework-cap)" == "1" ]] && echo true || echo false)"
+
+# capcheck <dir> <subagent_type> -> exit code
+capcheck() {
+  local rc=0
+  echo "{\"tool_input\":{\"subagent_type\":\"$2\"},\"cwd\":\"$1\"}" | CLAUDE_PROJECT_DIR="$1" bash "$CAP_HOOK" >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+# mk_proj <file> <active-id> <max_rework>
+mk_proj() { cat > "$1" <<EOF
+name: fx
+tasks:
+  - id: $2
+    title: T
+    type: AFK
+    status: active
+    blocked_by: []
+validation:
+  run_cmd: ""
+  max_rework: $3
+EOF
+}
+# mk_runs <file> <task> <agent> <verdict> <count>  (append run entries)
+mk_runs() {
+  local f=$1 task=$2 agent=$3 verdict=$4 n=$5 i
+  for ((i=0;i<n;i++)); do cat >> "$f" <<EOF
+- date: 2026-07-03
+  type: run
+  agent: $agent
+  task: $task
+  verdict: $verdict
+  critical: 1
+  high: 0
+  rework: $i
+  summary: $agent $verdict on $task
+EOF
+  done
+}
+
+# at the cap (3 BLOCKs, cap 3) the 3rd rework is allowed — the manifestdiff converge case
+CAP1="${TMPDIR_BASE}/cap-atcap"; mkdir -p "$CAP1"; mk_proj "$CAP1/project.yaml" t1 3
+: > "$CAP1/journal.yaml"; mk_runs "$CAP1/journal.yaml" t1 correctness-reviewer BLOCK 3
+assert "cap: 3 BLOCKs at cap 3 still allowed"      "$([[ "$(capcheck "$CAP1" tdd-implementer)" == "0" ]] && echo true || echo false)"
+
+# over the cap (4 BLOCKs, cap 3) the re-spawn is refused
+CAP2="${TMPDIR_BASE}/cap-over"; mkdir -p "$CAP2"; mk_proj "$CAP2/project.yaml" t1 3
+: > "$CAP2/journal.yaml"; mk_runs "$CAP2/journal.yaml" t1 correctness-reviewer BLOCK 4
+assert "cap: 4th BLOCK at a gate escalates"        "$([[ "$(capcheck "$CAP2" tdd-implementer)" == "2" ]] && echo true || echo false)"
+
+# the cap only gates tdd-implementer spawns, not other agents
+assert "cap: only gates tdd-implementer"           "$([[ "$(capcheck "$CAP2" correctness-reviewer)" == "0" ]] && echo true || echo false)"
+
+# per-GATE, not per-task total: 3 correctness + 3 acceptance (max 3/gate) at cap 3 → allowed
+CAP3="${TMPDIR_BASE}/cap-pergate"; mkdir -p "$CAP3"; mk_proj "$CAP3/project.yaml" t1 3
+: > "$CAP3/journal.yaml"
+mk_runs "$CAP3/journal.yaml" t1 correctness-reviewer BLOCK 3
+mk_runs "$CAP3/journal.yaml" t1 implementation-validator BLOCK 3
+assert "cap: per-gate, not per-task total"         "$([[ "$(capcheck "$CAP3" tdd-implementer)" == "0" ]] && echo true || echo false)"
+
+# cap is configurable: max_rework 2, 3 BLOCKs → refused
+CAP4="${TMPDIR_BASE}/cap-config"; mkdir -p "$CAP4"; mk_proj "$CAP4/project.yaml" t1 2
+: > "$CAP4/journal.yaml"; mk_runs "$CAP4/journal.yaml" t1 correctness-reviewer BLOCK 3
+assert "cap: max_rework configurable (2)"          "$([[ "$(capcheck "$CAP4" tdd-implementer)" == "2" ]] && echo true || echo false)"
+
+# BLOCKs for a DIFFERENT task don't count against the active task
+CAP5="${TMPDIR_BASE}/cap-otask"; mkdir -p "$CAP5"; mk_proj "$CAP5/project.yaml" t1 3
+: > "$CAP5/journal.yaml"; mk_runs "$CAP5/journal.yaml" t2 correctness-reviewer BLOCK 5
+assert "cap: counts only the active task"          "$([[ "$(capcheck "$CAP5" tdd-implementer)" == "0" ]] && echo true || echo false)"
+
+# scaffolded project.yaml declares the cap (not a magic number)
+assert "project.yaml: declares max_rework"         "$(grep -qE '^[[:space:]]*max_rework:' "$TARGET/project.yaml" && echo true || echo false)"
+
 # ── repo.sh lifecycle against a throwaway remote ──────────────────────────────
 if command -v yq >/dev/null 2>&1; then
   REMOTE="${TMPDIR_BASE}/remote.git"
