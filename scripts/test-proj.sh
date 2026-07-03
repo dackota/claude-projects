@@ -308,6 +308,17 @@ EOF
 ISO_RC=0; echo '{"session_id":"BBB"}' | CLAUDE_PROJECT_DIR="$FX_ISO" bash "$STOP_HOOK" >/dev/null 2>&1 || ISO_RC=$?
 assert "stop: crashed session's orphan doesn't block a healthy one" "$([[ "$ISO_RC" == "0" ]] && echo true || echo false)"
 
+# journal-stop must NOT age-delete ANOTHER session's markers. A concurrent session's
+# marker aged past the old `-mtime +1` sweep threshold (e.g. a weekend pause) with a
+# gate run still unlogged must survive another session's Stop — else that session's
+# own next Stop skips its completeness check and exits without its required run entry.
+FX_SWEEP="${TMPDIR_BASE}/a1-sweep"; mkdir -p "$FX_SWEEP/.claude/state"; printf '[]\n' > "$FX_SWEEP/journal.yaml"
+printf 'implementation-validator\n' > "$FX_SWEEP/.claude/state/pending-gate-runs.ZZZ"
+printf '0\n' > "$FX_SWEEP/.claude/state/pending-baseline.ZZZ"
+touch -t 202601010000 "$FX_SWEEP/.claude/state/pending-gate-runs.ZZZ" "$FX_SWEEP/.claude/state/pending-baseline.ZZZ"
+echo '{"session_id":"YYY"}' | CLAUDE_PROJECT_DIR="$FX_SWEEP" bash "$STOP_HOOK" >/dev/null 2>&1 || true
+assert "stop: does not age-delete another session's markers" "$([[ -s "$FX_SWEEP/.claude/state/pending-gate-runs.ZZZ" ]] && echo true || echo false)"
+
 # adversarial: a malformed run entry among well-formed ones is still caught
 FX_MULTI="${TMPDIR_BASE}/a1-multi"; mkdir -p "$FX_MULTI"
 cat > "$FX_MULTI/journal.yaml" <<'EOF'
