@@ -87,6 +87,9 @@ assert "default: diagnosing-bugs hitl tmpl"   "$([[ -f $TARGET/.claude/skills/di
 assert "default: prototype bundled"           "$([[ -d $TARGET/.claude/skills/prototype ]] && echo true || echo false)"
 assert "default: improve-codebase-arch bundled" "$([[ -d $TARGET/.claude/skills/improve-codebase-architecture ]] && echo true || echo false)"
 assert "default: tdd baseline is unconditional" "$(grep -q 'Observable by default (baseline' "$TARGET/.claude/agents/tdd-implementer.md" && echo true || echo false)"
+assert "default: barrier-gate hook present"    "$([[ -f $TARGET/.claude/skills/journal/hooks/barrier-gate.sh ]] && echo true || echo false)"
+assert "default: barrier-gate hook wired"      "$(grep -q 'barrier-gate.sh' "$TARGET/.claude/settings.json" && echo true || echo false)"
+assert "default: preflight checks barrier-gate" "$(grep -q 'barrier-gate' "$TARGET/.claude/skills/next/next-preflight.sh" && echo true || echo false)"
 
 # ── dry-run creates nothing ───────────────────────────────────────────────────
 DRY_TARGET="${TMPDIR_BASE}/dry-run-test"
@@ -282,6 +285,29 @@ EOF
 assert "stop: entry written reconciles audit"      "$([[ "$(stopcheck "$FX_MARK")" == "0" ]] && echo true || echo false)"
 assert "stop: reconcile clears pending markers"    "$([[ ! -s "$FX_MARK/.claude/state/pending-gate-runs" ]] && echo true || echo false)"
 
+# Fix 4: session-scoped markers isolate a crashed session from a healthy one. Session
+# AAA runs a gate then "crashes" (never writes its entry, never stops), leaving an
+# orphaned marker; session BBB runs a gate, logs it, and stops — and must be clean
+# despite AAA's orphan (pre-fix, the single shared marker blocked any session's Stop).
+FX_ISO="${TMPDIR_BASE}/a1-iso"; mkdir -p "$FX_ISO"; printf '[]\n' > "$FX_ISO/journal.yaml"
+echo "{\"tool_input\":{\"subagent_type\":\"implementation-validator\"},\"session_id\":\"AAA\",\"cwd\":\"$FX_ISO\"}" \
+  | CLAUDE_PROJECT_DIR="$FX_ISO" bash "$RUN_HOOK" >/dev/null 2>&1 || true
+assert "run-check: marker is session-scoped"        "$([[ -s "$FX_ISO/.claude/state/pending-gate-runs.AAA" ]] && echo true || echo false)"
+echo "{\"tool_input\":{\"subagent_type\":\"correctness-reviewer\"},\"session_id\":\"BBB\",\"cwd\":\"$FX_ISO\"}" \
+  | CLAUDE_PROJECT_DIR="$FX_ISO" bash "$RUN_HOOK" >/dev/null 2>&1 || true
+cat > "$FX_ISO/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: correctness-reviewer
+  task: t
+  verdict: PASS
+  critical: 0
+  high: 0
+  rework: 0
+EOF
+ISO_RC=0; echo '{"session_id":"BBB"}' | CLAUDE_PROJECT_DIR="$FX_ISO" bash "$STOP_HOOK" >/dev/null 2>&1 || ISO_RC=$?
+assert "stop: crashed session's orphan doesn't block a healthy one" "$([[ "$ISO_RC" == "0" ]] && echo true || echo false)"
+
 # adversarial: a malformed run entry among well-formed ones is still caught
 FX_MULTI="${TMPDIR_BASE}/a1-multi"; mkdir -p "$FX_MULTI"
 cat > "$FX_MULTI/journal.yaml" <<'EOF'
@@ -376,6 +402,16 @@ assert "cap: max_rework configurable (2)"          "$([[ "$(capcheck "$CAP4" tdd
 CAP5="${TMPDIR_BASE}/cap-otask"; mkdir -p "$CAP5"; mk_proj "$CAP5/project.yaml" t1 3
 : > "$CAP5/journal.yaml"; mk_runs "$CAP5/journal.yaml" t2 correctness-reviewer BLOCK 5
 assert "cap: counts only the active task"          "$([[ "$(capcheck "$CAP5" tdd-implementer)" == "0" ]] && echo true || echo false)"
+
+# Fix 5: a gate's PASS ends its rework streak, so a task reopened after it passed
+# starts fresh instead of inheriting the earlier episode's BLOCK count. 5 old BLOCKs
+# (way over cap 3) + a PASS + 1 new BLOCK → streak is 1 → allowed.
+CAP6="${TMPDIR_BASE}/cap-episode"; mkdir -p "$CAP6"; mk_proj "$CAP6/project.yaml" t1 3
+: > "$CAP6/journal.yaml"
+mk_runs "$CAP6/journal.yaml" t1 correctness-reviewer BLOCK 5
+mk_runs "$CAP6/journal.yaml" t1 correctness-reviewer PASS  1
+mk_runs "$CAP6/journal.yaml" t1 correctness-reviewer BLOCK 1
+assert "cap: PASS resets the rework streak (reopen)" "$([[ "$(capcheck "$CAP6" tdd-implementer)" == "0" ]] && echo true || echo false)"
 
 # scaffolded project.yaml declares the cap (not a magic number)
 assert "project.yaml: declares max_rework"         "$(grep -qE '^[[:space:]]*max_rework:' "$TARGET/project.yaml" && echo true || echo false)"
@@ -646,6 +682,55 @@ if command -v yq >/dev/null 2>&1 && [[ -d "$RT/worktrees/slice-2/remote" ]]; the
   rm -rf "$WT2_GITDIR/pr-security-review"
   assert "gate: task branch not force-reviewed"      "$([[ "$(prg 'gh pr create -t x' "$WT2")" == "0" ]] && echo true || echo false)"
 fi
+
+# ── barrier-gate.sh: acceptance+correctness PR gate (worktree + next scoped) ──
+BARRIER_GATE="$RT/.claude/skills/journal/hooks/barrier-gate.sh"
+# A git repo whose path is under worktrees/ — the pipeline task-worktree shape.
+BG_WT="${TMPDIR_BASE}/bg/worktrees/slice-1/remote"
+mkdir -p "$BG_WT"
+git init -q "$BG_WT"
+git -C "$BG_WT" config user.email t@t.test
+git -C "$BG_WT" config user.name "Test"
+git -C "$BG_WT" config commit.gpgsign false
+echo base > "$BG_WT/f.txt"; git -C "$BG_WT" add -A; git -C "$BG_WT" commit -qm base
+BG_SHA="$(git -C "$BG_WT" rev-parse HEAD)"
+BG_VDIR="$(git -C "$BG_WT" rev-parse --absolute-git-dir)/barrier-review"
+bgate() { # bgate <workspace-root> <cwd> -> exit code
+  local rc=0
+  echo "{\"tool_input\":{\"command\":\"gh pr create -t x\"},\"cwd\":\"$2\"}" \
+    | CLAUDE_PROJECT_DIR="$1" bash "$BARRIER_GATE" >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+# Workspaces distinguished only by which barrier pieces they carry.
+BG_NONEXT="${TMPDIR_BASE}/bg-nonext"; mkdir -p "$BG_NONEXT/.claude/skills/journal"
+BG_FULL="${TMPDIR_BASE}/bg-full"; mkdir -p "$BG_FULL/.claude/skills/next" "$BG_FULL/.claude/agents"
+BG_DEGRADED="${TMPDIR_BASE}/bg-degraded"; mkdir -p "$BG_DEGRADED/.claude/skills/next" "$BG_DEGRADED/.claude/agents"
+: > "$BG_FULL/.claude/agents/implementation-validator.md"
+: > "$BG_FULL/.claude/agents/correctness-reviewer.md"
+
+rm -rf "$BG_VDIR"
+# The fix: without the barrier workflow (`next`) installed, the journal-shipped hook
+# stays inert — a supported `--skills journal,repo` subset can't be permanently blocked.
+assert "barrier-gate: inert without next skill"      "$([[ "$(bgate "$BG_NONEXT" "$BG_WT")" == "0" ]] && echo true || echo false)"
+# `next` present but gate agents missing -> degraded install -> fail closed.
+assert "barrier-gate: fail-closed on degraded next"  "$([[ "$(bgate "$BG_DEGRADED" "$BG_WT")" == "2" ]] && echo true || echo false)"
+# `next` + both agents present, no recorded verdict -> a built slice must carry one.
+assert "barrier-gate: blocks worktree PR w/o verdict" "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "2" ]] && echo true || echo false)"
+# A recorded verdict is honored ahead of every other check (independent of next).
+mkdir -p "$BG_VDIR"
+printf 'acceptance PASS\ncorrectness PASS\n' > "$BG_VDIR/$BG_SHA"
+assert "barrier-gate: honors PASS/PASS verdict"      "$([[ "$(bgate "$BG_NONEXT" "$BG_WT")" == "0" ]] && echo true || echo false)"
+printf 'acceptance PASS\ncorrectness BLOCK\n' > "$BG_VDIR/$BG_SHA"
+assert "barrier-gate: blocks recorded non-PASS"      "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "2" ]] && echo true || echo false)"
+rm -rf "$BG_VDIR"
+# Inline / ad-hoc PR (cwd not under worktrees/) is allowed even with next installed.
+BG_INLINE="${TMPDIR_BASE}/bg-inline"
+git init -q "$BG_INLINE"
+git -C "$BG_INLINE" config user.email t@t.test
+git -C "$BG_INLINE" config user.name "Test"
+git -C "$BG_INLINE" config commit.gpgsign false
+echo base > "$BG_INLINE/f.txt"; git -C "$BG_INLINE" add -A; git -C "$BG_INLINE" commit -qm base
+assert "barrier-gate: allows inline non-worktree"    "$([[ "$(bgate "$BG_FULL" "$BG_INLINE")" == "0" ]] && echo true || echo false)"
 
 # ── next skill: orchestrator install + dependency resolution ──────────────────
 NT="${TMPDIR_BASE}/next-test"

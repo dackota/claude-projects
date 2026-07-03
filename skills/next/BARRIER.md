@@ -102,12 +102,33 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
   `docs/validations/<task-id>-<slug>.md` (workspace lifecycle frontmatter; one section
   per gate — verdict · what it validated · how · evidence — built from what each gate
   returned; record the *passing* state). You write it, not the review agents (they are
-  read-only) — an `agent-controls` control. Then flip the task `active → done` and
-  proceed to **Land** — open the PR with `scripts/repo.sh pr <task>` (cwd-safe;
-  self-enforces the recorded review verdict), where the security review runs and
-  **appends its own section** to that record. The PR gate does **not** re-run
-  acceptance or correctness — the post-build PASS already covers this HEAD SHA, so
-  only the security review runs there (no duplicate validation per slice).
+  read-only) — an `agent-controls` control.
+
+  Then **record the barrier verdict** so the PR gate can enforce it in code — the same
+  pattern the security gate uses. As a **separate write, before** you open the PR (a
+  verdict chained in the same command as `gh pr create` may not have landed when the
+  hook fires — the write-then-act rule), write one line per gate to
+  `"$(git rev-parse --absolute-git-dir)"/barrier-review/"$(git rev-parse HEAD)"`:
+
+  ```
+  acceptance PASS
+  correctness PASS
+  runtime SKIP          # or PASS/BLOCK — recorded, not gated here
+  observability PASS    # omit when the gate didn't run
+  ```
+
+  You write this (the gate agents are read-only) — it is the acceptance/correctness
+  analogue of the `.git/pr-security-review/<sha>` verdict. `barrier-gate.sh` (raw
+  `gh pr create`) and `scripts/repo.sh pr` both require `acceptance PASS` **and**
+  `correctness PASS` for HEAD, so a slice can no longer reach a PR with these gates
+  silently skipped.
+
+  Then flip the task `active → done` and proceed to **Land** — open the PR with
+  `scripts/repo.sh pr <task>` (cwd-safe; self-enforces the recorded barrier **and**
+  security verdicts), where the security review runs and **appends its own section** to
+  the validation record. The PR gate does **not** re-run acceptance or correctness —
+  the recorded barrier verdict already covers this HEAD SHA, so only the security review
+  runs there (no duplicate validation per slice).
 - **Any BLOCK** → the slice isn't ready. Leave the task `active`, write a `blocker`
   journal entry with the failing gate's findings (the validator's CRITICAL acceptance
   gaps, the correctness gate's CRITICAL bugs, the runtime gate's failure, and/or the
@@ -127,7 +148,10 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
 **The loop is bounded — it does not run forever.** A `rework-cap.sh` PreToolUse hook
 refuses to re-spawn `tdd-implementer` once any single gate has BLOCKed this task more
 than `validation.max_rework` times (default **3** — the 3rd rework is allowed, a 4th is
-refused; counted per gate from the `run` entries). When the cap fires, do not fight it:
+refused; counted per gate from the `run` entries). The count is scoped to the **current
+build episode**: a gate's own PASS ends its rework streak and resets its counter, so a
+task reopened long after it passed (a security reopen, a manual reopen) starts fresh
+rather than inheriting the earlier episode's BLOCK count. When the cap fires, do not fight it:
 a gate that keeps blocking the same slice signals a **wrong seam, a flaky test, or an
 impossible criterion**, not something another build loop will fix. Flip the task to
 `blocked`, write a `blocker` entry with the recurring finding, and hand it to a human.

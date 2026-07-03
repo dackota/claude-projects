@@ -112,7 +112,7 @@ Hook-bearing skills (`journal`, `sync-status`, `repo`, `pr-security-review`) als
 | Slice | PRD exists, no tasks | `to-issues` |
 | Pick | tasks exist, none active | next unblocked task → build via `tdd-implementer` sub-agent (HITL: gather human input first) |
 | Build | a task is active | continue the build via the sub-agent; the post-build acceptance gate loops back here on a gap |
-| Land | task done, not PR'd | open the PR — the security review runs at `gh pr create` (acceptance already passed) |
+| Land | task done, not PR'd | open the PR via `repo.sh pr`, which enforces the recorded barrier verdict (acceptance + correctness PASS for HEAD); the security review runs at `gh pr create` |
 
 The planning arc (grill → prd → issues) auto-chains in one session with a light confirm at each gate; building breaks to a **fresh session per task** to resist context drift. When a picked task depends on an in-review slice, `/next` stacks its worktree on that branch (via `repo.sh`) so work doesn't stall, and warns if a stacked base was reopened.
 
@@ -187,7 +187,7 @@ For **service projects**, a task that adds a request-serving path gets a second 
 
 ### Security — the PR gate (`/pr-security-review`)
 
-Holds `gh pr create` until an independent **security** review signs off. (Acceptance is already done by the time a PR opens, so the PR gate is security-only.) Bundles the security agent plus its two checklists:
+Holds `gh pr create` until an independent **security** review signs off. (Acceptance and correctness are validated earlier by the post-build barrier; the PR seam re-checks *in code* that a barrier verdict is recorded PASS for HEAD — via `barrier-gate.sh` on a raw `gh pr create`, and `repo.sh pr` self-enforcing the same — so the barrier can't be skipped en route to a PR. The only fresh review that runs here is **security**.) Bundles the security agent plus its two checklists:
 
 - **`security-reviewer`** — a review-only agent (no `Write`/`Edit`) that checks the change against the bundled `security-review` (app-code) and `cloud-infra-security` (cloud/IaC) checklists.
 - **`security-review`** and **`cloud-infra-security`** — the checklists, bundled so each workspace is self-contained; the global `~/.claude/skills/` copies become symlinks back to these.

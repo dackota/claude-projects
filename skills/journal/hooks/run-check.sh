@@ -26,9 +26,17 @@ root="${CLAUDE_PROJECT_DIR:-}"
 [[ -z "$root" ]] && root=$(echo "$input" | jq -r '.cwd // ""' 2>/dev/null || echo "")
 [[ -z "$root" ]] && root="$PWD"
 
+# Session-scope the pending/baseline markers so a crashed or interrupted session can't
+# corrupt the NEXT session's audit accounting (each session only ever reads its own).
+# When session_id is absent the suffix is empty — byte-identical to the old single-file
+# name — and journal-stop.sh derives the identical name, so the pair stays consistent.
+sid="$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || echo "")"
+sid="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9._-' '_')"
+sfx=""; [[ -n "$sid" ]] && sfx=".$sid"
+
 state="$root/.claude/state"
-pending="$state/pending-gate-runs"
-baseline="$state/pending-baseline"
+pending="$state/pending-gate-runs$sfx"
+baseline="$state/pending-baseline$sfx"
 journal="$root/journal.yaml"
 
 mkdir -p "$state" 2>/dev/null || true

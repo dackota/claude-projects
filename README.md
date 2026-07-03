@@ -69,7 +69,7 @@ From there you rarely pick a skill by hand — **`/next` routes you.** It reads 
 | Slice | PRD exists, no tasks | `/to-issues` |
 | Pick | tasks exist, none active | next unblocked task → build via `tdd-implementer` sub-agent (HITL input gathered first) |
 | Build | a task is active | continue the build via the sub-agent; the post-build barrier loops back here on any gate's critical finding |
-| Land | task done, not PR'd | the security review at `gh pr create` (the post-build barrier already passed) |
+| Land | task done, not PR'd | `repo.sh pr` enforces the recorded barrier verdict (acceptance + correctness), then the security review at `gh pr create` |
 
 The planning arc auto-chains in one session; building breaks to a fresh session per task to resist context drift.
 

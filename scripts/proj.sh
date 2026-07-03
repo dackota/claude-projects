@@ -124,6 +124,10 @@ wire_skill_hooks() {
       # Before re-spawning tdd-implementer, refuse if a gate has BLOCKed the active
       # task more than validation.max_rework times (barrier rework cap → escalate).
       add_hook "$settings" PreToolUse "Task" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/rework-cap.sh' true "Rework cap reached"
+      # Gate `gh pr create` on the barrier's acceptance + correctness verdict, so the
+      # "never reaches a PR until both PASS" promise is code, not just prose. (Security
+      # is gated separately by pr-gate.sh; repo.sh pr self-enforces both internally.)
+      add_hook "$settings" PreToolUse "Bash" 'bash "$CLAUDE_PROJECT_DIR"/.claude/skills/journal/hooks/barrier-gate.sh' false ""
       ;;
     sync-status)
       # Synchronous (no asyncRewake): block once at the real stop when STATUS.md

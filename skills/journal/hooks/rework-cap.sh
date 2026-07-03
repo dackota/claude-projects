@@ -37,10 +37,20 @@ active=$(awk '
 ' "$project")
 [[ -z "$active" ]] && exit 0
 
-# max per-gate BLOCK count for the active task
+# Max per-gate BLOCK count for the active task, counted over the CURRENT build episode
+# only: a gate's own PASS entry ends its rework streak and resets its counter. So a task
+# reopened long after it was done (a security reopen, a manual reopen) starts fresh
+# rather than inheriting the BLOCK count from its earlier, already-passed episode.
+# Entries are append-only and chronological, so processing them in file order makes the
+# reset order-correct.
 maxblk=$(awk -v task="$active" '
   function val(l,  v) { v=l; sub(/^  [a-z_]+:[[:space:]]*/,"",v); sub(/[[:space:]#].*$/,"",v); return v }
-  function flush() { if (type=="run" && t==task && verdict=="BLOCK" && ag!="") c[ag]++ }
+  function flush() {
+    if (type=="run" && t==task && ag!="") {
+      if (verdict=="BLOCK") c[ag]++
+      else if (verdict=="PASS") c[ag]=0
+    }
+  }
   /^-[[:space:]]/ { flush(); type=""; ag=""; verdict=""; t="" }
   /^  type:/    { type=val($0) }
   /^  agent:/   { ag=val($0) }
