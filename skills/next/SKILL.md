@@ -33,6 +33,16 @@ Re-derive the phase from artifacts **every** invocation — never trust a stored
 cursor. The artifacts are the source of truth; work may have happened out of band
 since you last looked.
 
+### 0. Preflight — verify the pipeline is installed
+
+Before routing, run `bash .claude/skills/next/next-preflight.sh`. It verifies the
+required scripts, gate/build agents, companion skills, and hooks are actually
+present — a degraded install (e.g. `yq` missing at scaffold time → gate agents
+never copied) otherwise routes a barrier whose security gate or gate agents don't
+exist, shipping PRs with no independent review *silently*. If it reports anything
+missing, surface that and stop — resolve it (`proj update-skills`, or re-scaffold)
+before routing.
+
 ### 1. Read the state signals
 
 Always read `project.yaml` first — its `jira_key` selects the routing mode:
