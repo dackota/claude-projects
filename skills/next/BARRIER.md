@@ -15,6 +15,18 @@ Once your own review of a `COMPLETE` `tdd-implementer` summary is clean, **commi
 slice** in the worktree, then run the barrier's gates in parallel — all in a single
 message, so adding gates adds no wall-clock latency.
 
+**Collecting the verdicts.** Each gate **returns its verdict inline** — its final
+`VERDICT: …` block is the Agent call's result, which you parse directly. The barrier is a
+synchronization point: collect every gate's verdict before you record runs or advance.
+Running the gates in the **foreground** (so their verdicts come back in the tool result of
+that one parallel message) is the clean path — it needs no follow-up retrieval. If instead
+you spawn them in the background, **wait for each gate's completion notification** — the
+verdict arrives on its own. Do **not** fetch a still-running gate's output to "check on
+it": retrieving a running sub-agent's output returns its raw transcript, not a verdict, and
+burns context for nothing. Note the audit hook (`run-check.sh`) nudges you when a gate is
+*dispatched*, not when its verdict is ready — for a backgrounded gate that fires at spawn,
+so treat it as "remember to journal this once it returns," not as a signal to go looking.
+
 ### Acceptance gate (always)
 
 Spawn the `implementation-validator` (Agent tool,
