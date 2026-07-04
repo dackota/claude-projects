@@ -11,9 +11,12 @@ the router core stays lean the rest of the time.
 
 ## Run the gates — one parallel message
 
-Once your own review of a `COMPLETE` `tdd-implementer` summary is clean, **commit the
-slice** in the worktree, then run the barrier's gates in parallel — all in a single
-message, so adding gates adds no wall-clock latency.
+Once your **cheap smoke** of a `COMPLETE` `tdd-implementer` summary is clean — a
+fail-fast build/test check to confirm the summary holds, **not** a full re-validation
+(the fresh gates below are the validation; the orchestrator's own deep re-validation is
+redundant with them — see the router core's Review step) — **commit the slice** in the
+worktree, then run the barrier's gates in parallel — all in a single message, so adding
+gates adds no wall-clock latency.
 
 **Collecting the verdicts.** Each gate **returns its verdict inline** — its final
 `VERDICT: …` block is the Agent call's result, which you parse directly. The barrier is a
