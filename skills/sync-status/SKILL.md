@@ -83,7 +83,12 @@ item and next move links to its plan or decision doc rather than describing it.
 **Pipeline health** is the loop's "Learn" surface — a rollup of `journal.yaml`
 `type: run` entries (block rate, rework rate, which gate blocks most, which tasks
 rework most). Omit the whole section when there are no `run` entries yet; when there
-are, keep it to a few rolled-up lines — never list every run.
+are, keep it to a few rolled-up lines — never list every run. **Exclude `run` entries
+marked `carried_forward: true` from the block-rate denominator and the by-gate counts** —
+a carried-forward verdict (see `next/BARRIER.md`, "Carrying a verdict forward") is a
+docs-only re-record of an already-passed barrier, not an independent gate run, so counting
+it would dilute the very signal this surface exists to show; surface them separately if
+useful (e.g. a `carried-forward: <n>` line).
 
 ## Bootstrap behavior
 
