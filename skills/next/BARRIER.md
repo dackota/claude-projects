@@ -159,6 +159,42 @@ a gate that keeps blocking the same slice signals a **wrong seam, a flaky test, 
 impossible criterion**, not something another build loop will fix. Flip the task to
 `blocked`, write a `blocker` entry with the recurring finding, and hand it to a human.
 
+## Carrying a verdict forward (a docs-only touch-up)
+
+Amending a slice that **already passed** the barrier with a **provably non-functional**
+change — a README fix, a comment correction, a doc-only follow-up — moves `HEAD`. Since
+the PR gate's verdict is SHA-keyed, that would otherwise force a full re-barrier just to
+re-record `acceptance`/`correctness` for the new SHA. On a zero-functional-change delta
+that re-run is pure waste: there is **nothing for the gates to re-review** — acceptance's
+"delivers the criteria" and correctness's "bugs this diff introduced" are both no-ops over
+docs.
+
+So instead of re-spawning the gates, **carry the verdict forward** — gated by a script,
+not judgment:
+
+```
+bash .claude/skills/next/barrier-carry-forward.sh <prev-sha>
+```
+
+`<prev-sha>` is the last commit with an all-PASS barrier. The helper writes
+`barrier-review/<HEAD>` (`acceptance PASS` + `correctness PASS` + a `carried-forward-from`
+marker — the same file `barrier-gate.sh` and `repo.sh pr` read) **iff** all hold, else it
+exits non-zero and you run the real gates on `HEAD`:
+
+1. `<prev-sha>` is an ancestor of `HEAD` (carry-forward only moves forward);
+2. `<prev-sha>` itself recorded **acceptance PASS + correctness PASS**;
+3. `classify.sh` over `<prev-sha>...HEAD` prints **nothing** — the same oracle the security
+   gate trusts to skip a review. It routes `*.yaml` / `*.tf` / source to `infra`/`code`, so
+   a manifest edit or even a comment-only change *inside* a code file is deliberately
+   **not** eligible and re-barriers; only genuine docs/prose (`*.md`, text) qualify.
+
+**Bounds.** Never applies to the *initial* barrier (always fresh gates); never carries a
+`BLOCK`; needs no security special-case — a docs-only delta makes `classify.sh` empty, so
+the PR security gate is already a trivial PASS for the new `HEAD`. **Audit:** log one `run`
+entry with `carried_forward: true` (verdict PASS) so the trail is honest that the gates did
+not independently re-run — `sync-status` excludes `carried_forward` runs from the block-rate
+denominator so Pipeline-health keeps measuring only real gate runs.
+
 ## Inline (`/tdd`) mode
 
 When `/tdd` is invoked **by hand**, the loop runs inline in the main agent (Opus) and

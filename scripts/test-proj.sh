@@ -749,6 +749,33 @@ git -C "$BG_INLINE" config commit.gpgsign false
 echo base > "$BG_INLINE/f.txt"; git -C "$BG_INLINE" add -A; git -C "$BG_INLINE" commit -qm base
 assert "barrier-gate: allows inline non-worktree"    "$([[ "$(bgate "$BG_FULL" "$BG_INLINE")" == "0" ]] && echo true || echo false)"
 
+# ── barrier-carry-forward.sh: docs-only verdict carry-forward (else re-barrier) ──
+CF="${SCRIPT_DIR}/../skills/next/barrier-carry-forward.sh"
+assert "carry-forward: helper exists"               "$([[ -f $CF ]] && echo true || echo false)"
+assert "carry-forward: BARRIER.md documents it"     "$(grep -q 'barrier-carry-forward' "${SCRIPT_DIR}/../skills/next/BARRIER.md" && echo true || echo false)"
+assert "carry-forward: sync-status excludes it"     "$(grep -q 'carried_forward' "${SCRIPT_DIR}/../skills/sync-status/SKILL.md" && echo true || echo false)"
+CFW="${TMPDIR_BASE}/cf/repo"; mkdir -p "$CFW"
+git init -q "$CFW"; git -C "$CFW" config user.email t@t.test; git -C "$CFW" config user.name Test; git -C "$CFW" config commit.gpgsign false
+echo hi > "$CFW/README.md"; git -C "$CFW" add -A; git -C "$CFW" commit -qm init
+CF_PREV="$(git -C "$CFW" rev-parse HEAD)"
+CF_GD="$(git -C "$CFW" rev-parse --absolute-git-dir)"; mkdir -p "$CF_GD/barrier-review"
+printf 'acceptance PASS\ncorrectness PASS\n' > "$CF_GD/barrier-review/$CF_PREV"
+# docs-only delta (README) -> eligible, writes a carried verdict for HEAD
+echo more >> "$CFW/README.md"; git -C "$CFW" commit -qam docs
+CF_H1="$(git -C "$CFW" rev-parse HEAD)"
+( cd "$CFW" && bash "$CF" "$CF_PREV" >/dev/null 2>&1 ) || true
+assert "carry-forward: docs-only writes verdict"    "$([[ -f "$CF_GD/barrier-review/$CF_H1" ]] && echo true || echo false)"
+assert "carry-forward: marks carried-forward"       "$(grep -q 'carried-forward-from' "$CF_GD/barrier-review/$CF_H1" 2>/dev/null && echo true || echo false)"
+# code delta (*.py) -> refused, no verdict written for the new HEAD
+echo 'print(1)' > "$CFW/app.py"; git -C "$CFW" add -A; git -C "$CFW" commit -qm code
+CF_H2="$(git -C "$CFW" rev-parse HEAD)"
+cf_refused=false; ( cd "$CFW" && bash "$CF" "$CF_H1" >/dev/null 2>&1 ) || cf_refused=true
+assert "carry-forward: code delta is refused"       "$([[ "$cf_refused" == "true" && ! -f "$CF_GD/barrier-review/$CF_H2" ]] && echo true || echo false)"
+# no prior all-PASS verdict -> refused even for a docs-only delta
+echo z >> "$CFW/README.md"; git -C "$CFW" commit -qam docs2
+cf_noprev=false; ( cd "$CFW" && bash "$CF" "$CF_H2" >/dev/null 2>&1 ) || cf_noprev=true
+assert "carry-forward: refused without prior PASS"  "$([[ "$cf_noprev" == "true" ]] && echo true || echo false)"
+
 # ── next skill: orchestrator install + dependency resolution ──────────────────
 NT="${TMPDIR_BASE}/next-test"
 bash "$PROJ" "next-test" --dir "$TMPDIR_BASE" --skills next >/dev/null
@@ -764,6 +791,7 @@ assert "next: correctness-reviewer agent wired"     "$([[ -f $NT/.claude/agents/
 assert "correctness: security-obligations ledger"   "$(grep -q 'Security obligations for future callers' "$NT/.claude/agents/correctness-reviewer.md" && echo true || echo false)"
 assert "next: runtime-validator agent wired"        "$([[ -f $NT/.claude/agents/runtime-validator.md ]] && echo true || echo false)"
 assert "next: BARRIER.md reference doc installed"   "$([[ -f $NT/.claude/skills/next/BARRIER.md ]] && echo true || echo false)"
+assert "next: barrier-carry-forward.sh bundled"     "$([[ -f $NT/.claude/skills/next/barrier-carry-forward.sh ]] && echo true || echo false)"
 assert "next: SKILL points to canonical BARRIER"    "$(grep -q 'BARRIER.md' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "next: SKILL reads journal tail (dec 6)"     "$(grep -q 'last ~15 entries' "$NT/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "tdd-implementer: hardening baseline (dec 9)" "$(grep -q 'Harden by default' "$NT/.claude/agents/tdd-implementer.md" && echo true || echo false)"
