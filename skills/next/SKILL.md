@@ -183,12 +183,18 @@ disposable. For each build:
    **property/invariant test** over generated + adversarial inputs up front, so the failure
    class is caught in the build's RED phase rather than after a gate loop-back
    (`rules/common/testing.md`). It derives the plan and runs the red-green-refactor loop, returning a
-   `COMPLETE | PARTIAL | BLOCKED` summary. Review it: re-run the tests; check the tests
-   are behavioral, not implementation-coupled; and **spot-verify the implementer's
-   formatter/linter result** — it runs the project's declared
-   `validation.format_cmd`/`lint_cmd`/`test_cmd` when set, else the inferred toolchain
-   (`gofmt`/`go vet`/`golangci-lint`, `ruff`/`black`/`mypy`, etc.), at close-out and
-   reports clean under **Format & lint**, so confirm rather than re-run the whole thing. Only if a spot-check shows it is
+   `COMPLETE | PARTIAL | BLOCKED` summary. Review it with a **cheap smoke, not a full re-validation**: run the declared
+   build/test command **once** — a fail-fast check that the summary holds and the slice
+   actually builds/renders before you spend the barrier's parallel gate contexts — and
+   scan that the tests are behavioral, not implementation-coupled. **Do not independently
+   re-render or re-run the full validation suite for review**: the barrier's fresh gates
+   below do that with more rigor and independence, and the orchestrator's own deep
+   re-validation is a strict subset of them — it catches nothing they miss while
+   duplicating them 3–4×, so it is spent tokens and latency, not added assurance. Still
+   **spot-verify the implementer's formatter/linter result** — it runs the project's
+   declared `validation.format_cmd`/`lint_cmd`/`test_cmd` when set, else the inferred
+   toolchain (`gofmt`/`go vet`/`golangci-lint`, `ruff`/`black`/`mypy`, etc.), at close-out
+   and reports clean under **Format & lint**, so confirm rather than re-run. Only if a spot-check shows it is
    actually dirty (a rare miss) record a `format-lint` `run` entry and re-spawn
    `tdd-implementer` to clean it — no full BLOCK-and-rebuild for formatting. On
    `BLOCKED` — a fork that surfaced mid-build — gather any further input the user needs
