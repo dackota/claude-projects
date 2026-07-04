@@ -56,6 +56,22 @@ Findings from these tools are evidence — cite the file:line, don't just restat
 - Goroutines spawned without `sync.WaitGroup` / errgroup coordination
 - Mutex locked without `defer mu.Unlock()` where an early return can skip the unlock
 
+**Resource lifecycle & untrusted-input hardening:**
+- Cleanup of a resource (temp dir, file handle, goroutine) that runs on the happy path
+  only — it must run on **every** exit: error, timeout, ctx-cancel, **and panic**. Prefer a
+  deferred guard over an explicit call on one branch; a fix that *relocates* cleanup to
+  close a race commonly opens a leak-on-panic on another path (fix + test the invariant at
+  the chokepoint — see [testing.md](./testing.md)).
+- `recover()` whose scope is wider than the panic it targets — it silently folds unrelated
+  future panics into a generic error. Narrow it, or document that the broad scope is
+  intentional (e.g. a "never panics" contract).
+- **Asymmetric protection between sibling steps** over the same untrusted input: if one step
+  has a `ctx`-timeout / concurrency cap / resource ceiling (bytes, count, recursion depth
+  *and breadth*), the sibling step doing comparable work usually needs the same — an
+  unbounded/uncancellable step is a DoS hole even when its sibling is bounded.
+- A blocking channel send / semaphore acquire with no `select` on `ctx.Done()` — a cancelled
+  caller blocks under saturation instead of returning.
+
 **Code quality:**
 - Functions > 50 lines or nesting > 4 levels — prefer early returns
 - Mutable package-level variables (hidden global state)
