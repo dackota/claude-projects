@@ -35,6 +35,14 @@ Reach for a property/invariant test when the smell fits:
   allows (empty, huge, malformed, missing a trailing newline);
 - the correct output is **expensive to hand-write** across many cases, but the *invariant*
   is cheap to state once.
+- the code is **stateful, concurrent, or owns a resource lifecycle** — a cache, a
+  semaphore / pool, a single-flight, a temp dir / file handle / goroutine — and its real
+  contract is an **operational invariant** rather than an output value: "cleanup runs
+  exactly once on _every_ exit, including panic / timeout / cancel", "the work runs at most
+  once per key", "the function never panics on any input", "the resource ceiling holds for
+  every input". These are the invariants a happy-path example test silently skips and a
+  reviewer (or production) finds later — so name them and test them in RED **up front**,
+  just like a structural output contract.
 
 Write it in the RED phase like any other test: state the invariant as a predicate, feed it
 generated inputs including the adversarial edges (empty, boundary, oversized, malformed),
@@ -43,6 +51,15 @@ catches the family member that would otherwise slip through. The tell that you n
 you catch yourself adding "…and also when the input is empty / huge / malformed" as
 separate example cases. Keep the example tests too, for specific behaviors and as readable
 documentation — the property test complements them, it doesn't replace them.
+
+**One fix at the chokepoint, for the whole class.** When a review or a failing case exposes
+a violation of an invariant, fix it at the **single chokepoint** the invariant flows through
+and add the property/invariant test that covers the _class_ — do not patch only the reported
+case. This matters most for lifecycle/concurrency invariants, where the *fix itself* is a
+common source of the next sibling (moving where cleanup runs to close a race opens a
+leak-on-panic; the reported case was never the whole invariant). Escalate to the class-level
+fix + invariant test at the **first** sign of a violation of this kind rather than chasing
+siblings across successive review rounds.
 
 ## Test-Driven Development
 
