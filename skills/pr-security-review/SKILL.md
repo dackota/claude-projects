@@ -65,7 +65,11 @@ and the gate honors a recorded verdict over any skip rule.
 3. **Security review.** Launch the `security-reviewer` agent (Agent tool,
    `subagent_type: security-reviewer`) with a fresh context, given only the diff
    range (`$BASE...HEAD`), the changed-file list, and which dimension(s) apply. Do
-   **not** pass it the implementation rationale — independence is the point. It
+   **not** pass it the implementation rationale — independence is the point. Run it
+   **in the foreground** (`run_in_background: false`) so the verdict returns in the
+   tool result — backgrounding a gate turns the wait into repeated Stop-hook
+   wake-up turns, each a full-prefix cache read (see `next/BARRIER.md`,
+   "Collecting the verdicts"). It
    returns `VERDICT: PASS|BLOCK` + severity counts + findings; `BLOCK` iff
    `CRITICAL > 0`.
 
