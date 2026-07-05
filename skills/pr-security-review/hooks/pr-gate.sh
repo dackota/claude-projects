@@ -47,12 +47,19 @@ sha="$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)"
 [[ -z "$gitdir" || -z "$sha" ]] && \
   block "can't resolve git repo/HEAD from the command's directory — run gh pr create inside the repo."
 
-# 1. Honor an existing verdict (a manual review always takes precedence).
+# 1. Honor an existing verdict (a manual review always takes precedence). PASS allows;
+#    an AUDITED skip (first line `SKIP <reason>`) allows too — a skip must carry a reason
+#    ("no silent skip", next/BARRIER.md), so a bare `SKIP` with no reason is refused; any
+#    other first line (BLOCK / CRITICAL) blocks.
 verdict_file="$gitdir/pr-security-review/$sha"
 if [[ -f "$verdict_file" ]]; then
   verdict="$(head -n1 "$verdict_file" 2>/dev/null || echo BLOCK)"
-  case "$verdict" in
+  vtok="$(printf '%s' "$verdict" | awk '{print $1}')"
+  case "$vtok" in
     PASS) exit 0 ;;
+    SKIP)
+      [[ "$(printf '%s' "$verdict" | awk '{print (NF>=2)}')" == "1" ]] && exit 0
+      block "security review for HEAD ($sha) is a reasonless SKIP — a skip must state why. Record it via 'record-verdict.sh --skip --reason \"<why>\"', or run the real review." ;;
     *)    block "PR review found CRITICAL issue(s) for HEAD ($sha). Fix them — the fix is a new commit, which re-reviews automatically — then re-run gh pr create." ;;
   esac
 fi

@@ -441,8 +441,12 @@ cmd_pr() {
   [[ -f "$verdict_file" ]] || \
     die "No PR review verdict for HEAD ($sha). Run the pr-security-review skill in worktrees/$task/$repo, then re-run."
   verdict="$(head -n1 "$verdict_file" 2>/dev/null || echo BLOCK)"
-  [[ "$verdict" == "PASS" ]] || \
-    die "PR review verdict for HEAD is '$verdict' — resolve the CRITICAL findings (each fix is a new commit, re-reviewed), then re-run."
+  # PASS, or an AUDITED skip (`SKIP <reason>` — a reasonless SKIP is refused; "no silent
+  # skip", next/BARRIER.md). Mirrors pr-gate.sh so the raw-gh and internal paths agree.
+  local sec_ok
+  sec_ok="$(printf '%s' "$verdict" | awk '{print ($1=="PASS" || ($1=="SKIP" && NF>=2)) ? 1 : 0}')"
+  [[ "$sec_ok" == "1" ]] || \
+    die "PR review verdict for HEAD is '$verdict' — resolve the CRITICAL findings (each fix is a new commit, re-reviewed), or record an audited skip ('record-verdict.sh --skip --reason \"<why>\"'), then re-run."
 
   # Self-enforce the post-build barrier the same way: a task-worktree PR is a built
   # slice, so acceptance + correctness must be recorded PASS for HEAD (the orchestrator
@@ -460,10 +464,19 @@ cmd_pr() {
     barrier_file="$gitdir/barrier-review/$sha"
     [[ -f "$barrier_file" ]] || \
       die "No post-build barrier verdict for HEAD ($sha). Run the acceptance + correctness gates via /next before opening the PR (see next/BARRIER.md)."
-    acc="$(grep -E '^acceptance[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
-    cor="$(grep -E '^correctness[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 | awk '{print $2}' || true)"
-    [[ "$acc" == "PASS" && "$cor" == "PASS" ]] || \
-      die "Post-build barrier for HEAD is not PASS (acceptance=${acc:-none}, correctness=${cor:-none}) — close the flagged gaps (each fix is a new commit that re-runs the gate), then re-run."
+    # A gate is satisfied by PASS, or an AUDITED SKIP (`<gate> SKIP <reason>` — a
+    # reasonless SKIP is refused; "no silent skip", see next/BARRIER.md,
+    # "Skipping a gate for one run"). Mirrors barrier-gate.sh's predicate so the
+    # raw-`gh pr create` path and this internal path agree on what satisfies the barrier.
+    local acc_line cor_line acc_ok cor_ok
+    acc_line="$(grep -E '^acceptance[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 || true)"
+    cor_line="$(grep -E '^correctness[[:space:]]' "$barrier_file" 2>/dev/null | head -n1 || true)"
+    acc="$(printf '%s' "$acc_line" | awk '{print $2}')"
+    cor="$(printf '%s' "$cor_line" | awk '{print $2}')"
+    acc_ok="$(printf '%s' "$acc_line" | awk '{print ($2=="PASS" || ($2=="SKIP" && NF>=3)) ? 1 : 0}')"
+    cor_ok="$(printf '%s' "$cor_line" | awk '{print ($2=="PASS" || ($2=="SKIP" && NF>=3)) ? 1 : 0}')"
+    [[ "$acc_ok" == "1" && "$cor_ok" == "1" ]] || \
+      die "Post-build barrier for HEAD is not satisfied (acceptance=${acc:-none}, correctness=${cor:-none}) — each gate must be PASS or an audited SKIP (SKIP + a reason). Close the flagged gaps (each fix is a new commit that re-runs the gate), then re-run."
 
     # Honor a recorded integration-review verdict too — the Land-phase whole-branch
     # lens for multi-slice PRs (see next/INTEGRATION-REVIEW.md). Honored-if-present
@@ -480,11 +493,61 @@ cmd_pr() {
   # Default to --fill (title/body from commits) when the caller passes no gh args.
   [[ ${#passthru[@]} -eq 0 ]] && passthru=(--fill)
 
+  # If any review was skipped for HEAD, the "⚠ Skipped reviews" disclosure is MANDATORY in
+  # the PR body — it is the compensating control for a self-initiated, unapproved skip
+  # (next/BARRIER.md): the PR reviewer is the last human who sees it. So whenever a skip is
+  # recorded we build the body ourselves, keeping any caller passthru flags EXCEPT
+  # title/body/fill flags (which we supersede — warning if the caller set one) so the
+  # disclosure can't be silently dropped by passing extra gh args (e.g. `-- --draft`).
+  local skip_section
+  skip_section="$(pr_skip_section "$gitdir" "$sha")"
+  if [[ -n "$skip_section" ]]; then
+    local kept=() i=0 dropped_body=0
+    while (( i < ${#passthru[@]} )); do
+      case "${passthru[$i]}" in
+        --fill|--fill-first|--fill-verbose) ;;                  # drop (title+body from commits; no value)
+        --title|-t|--body|-b|--body-file|-F)                    # drop the flag AND its value
+          dropped_body=1; i=$((i + 1)) ;;
+        *) kept+=("${passthru[$i]}") ;;                         # keep every other flag verbatim
+      esac
+      i=$((i + 1))
+    done
+    [[ "$dropped_body" == 1 ]] && warn "a review was skipped for this slice — superseding the supplied title/body so the PR body carries the '⚠ Skipped reviews' disclosure."
+    local pr_title pr_body
+    pr_title="$(git -C "$wt" log -n1 --format='%s' "origin/$base..HEAD" 2>/dev/null || true)"
+    [[ -z "$pr_title" ]] && pr_title="$branch"
+    pr_body="$(git -C "$wt" log --reverse --format='%s' "origin/$base..HEAD" 2>/dev/null | sed 's/^/- /')"
+    passthru=(${kept[@]+"${kept[@]}"} --title "$pr_title" --body "${pr_body}"$'\n\n'"${skip_section}")
+  fi
+
   info "Pushing '$branch' and opening a PR into '$base' (repo '$repo')"
   git -C "$wt" push -u origin "$branch"
   # cwd-safe: this cd is the script's own subshell, never the caller's shell.
   # gh detects the repo from the worktree's origin remote.
   ( cd "$wt" && gh pr create --base "$base" --head "$branch" "${passthru[@]}" )
+}
+
+# Emit a Markdown "Skipped reviews" section for HEAD from the recorded verdict files —
+# the loud, PR-visible compensating control for a self-initiated skip (next/BARRIER.md).
+# Reads the same files the gates read; prints nothing when no review was skipped.
+pr_skip_section() { # <gitdir> <sha>
+  local gd="$1" s="$2" bf sf lines="" l1 r
+  bf="$gd/barrier-review/$s"
+  sf="$gd/pr-security-review/$s"
+  # Barrier gates: lines shaped `<gate> SKIP <reason>` (PASS/BLOCK lines are ignored).
+  if [[ -f "$bf" ]]; then
+    lines="$(awk '$2=="SKIP" && NF>=3 { g=$1; $1=""; $2=""; sub(/^[[:space:]]+/,""); print "- " g ": " $0 }' "$bf")"
+  fi
+  # Security gate: first line `SKIP <reason>`.
+  if [[ -f "$sf" ]]; then
+    l1="$(head -n1 "$sf" 2>/dev/null || true)"
+    if [[ "$(printf '%s' "$l1" | awk '{print $1}')" == "SKIP" && "$(printf '%s' "$l1" | awk '{print (NF>=2)}')" == "1" ]]; then
+      r="$(printf '%s' "$l1" | awk '{$1=""; sub(/^[[:space:]]+/,""); print}')"
+      lines="${lines:+$lines$'\n'}- security: $r"
+    fi
+  fi
+  [[ -n "$lines" ]] && printf '## ⚠ Skipped reviews\n\n%s\n\nThese gate(s) were intentionally skipped for this change — no independent review ran for them. Confirm that is appropriate before merging.\n' "$lines"
+  return 0
 }
 
 usage() { grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'; }

@@ -66,6 +66,7 @@ last_synced: <ISO-8601 timestamp>
 - Rework: <avg> loop-backs per task; <n> task(s) looped back
 - By gate: acceptance <blocks>/<runs>, correctness <blocks>/<runs>, runtime <blocks>/<runs>, security <blocks>/<runs>, observability <blocks>/<runs>
 - Runtime gate: <skips>/<runtime-runs> run(s) SKIPped — or "hasn't actually executed in <n> slice(s)" when it has only ever SKIPped (the one gate for live-only bugs is dormant)
+- Skipped: <n> gate-run(s) intentionally skipped — <gate> ×<k>, … (reasons in the journal `run` entries)
 - <task-id> reworked <k>× — <the gate that keeps blocking it>
 
 ## Next moves
@@ -89,6 +90,13 @@ a carried-forward verdict (see `next/BARRIER.md`, "Carrying a verdict forward") 
 docs-only re-record of an already-passed barrier, not an independent gate run, so counting
 it would dilute the very signal this surface exists to show; surface them separately if
 useful (e.g. a `carried-forward: <n>` line).
+
+Apply the same reasoning to **intentional skips** — `verdict: SKIP` `run` entries (see
+`next/BARRIER.md`, "Skipping a gate for one run"): an intentionally-skipped gate is not a
+gate execution that could have blocked, so **exclude `SKIP` runs from the block-rate
+denominator and the by-gate counts** (the cross-workspace `rollup.sh` already does this),
+and surface them as the distinct **`Skipped:`** tally instead. (The runtime gate's own
+no-runnable-surface SKIP is already surfaced on its own `Runtime gate:` line.)
 
 ## Bootstrap behavior
 

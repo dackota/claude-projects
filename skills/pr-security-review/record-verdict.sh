@@ -66,6 +66,35 @@ if [[ "${1:-}" == "--trivial" ]]; then
   exit 0
 fi
 
+# --skip --reason "<why>": record an INTENTIONAL, per-run skip of the security review.
+# A skip has no reviewer output to derive from, so — like the barrier recorder — the
+# invariant is "no SILENT skip": the reason is mandatory and non-empty, and it is the sole
+# audit control on a self-initiated skip (see next/BARRIER.md, "Skipping a gate for one run"). The verdict
+# file's first line becomes `SKIP <reason>`, which pr-gate.sh / repo.sh pr honor as an
+# audited skip (and refuse a reasonless one).
+if [[ "${1:-}" == "--skip" ]]; then
+  shift
+  reason=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reason) reason="${2:-}"; shift; [[ $# -gt 0 ]] && shift ;;
+      *) echo "record-verdict: unknown argument '$1' (usage: --skip --reason \"<why>\")" >&2; exit 2 ;;
+    esac
+  done
+  reason="$(printf '%s' "$reason" | tr '\n\r\t' '   ' | sed 's/  */ /g; s/^ *//; s/ *$//')"
+  [[ -n "$reason" ]] \
+    || { echo "record-verdict: --skip requires a non-empty --reason (a skip must state why — no silent skip)" >&2; exit 2; }
+  mkdir -p "$gitdir/pr-security-review"
+  printf 'SKIP %s\nSECURITY SKIP %s\n' "$reason" "$reason" > "$gitdir/pr-security-review/$sha"
+  echo "recorded security verdict for ${sha:0:12}: SKIP ($reason)"
+  exit 0
+fi
+
+# The default (derive-from-stdin) path takes no arguments — a stray flag (e.g. --reason
+# without --skip) would otherwise be silently ignored and then block on an empty stdin read.
+[[ $# -eq 0 ]] \
+  || { echo "record-verdict: unexpected argument(s): $* — use --skip --reason \"<why>\", --trivial <base>, or pipe the reviewer output on stdin" >&2; exit 2; }
+
 review="$(cat)"
 [[ -n "${review//[[:space:]]/}" ]] \
   || { echo "record-verdict: no reviewer output on stdin — pipe the security-reviewer's verbatim result" >&2; exit 2; }
