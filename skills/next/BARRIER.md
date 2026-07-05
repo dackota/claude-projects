@@ -21,14 +21,20 @@ gates adds no wall-clock latency.
 **Collecting the verdicts.** Each gate **returns its verdict inline** — its final
 `VERDICT: …` block is the Agent call's result, which you parse directly. The barrier is a
 synchronization point: collect every gate's verdict before you record runs or advance.
-Running the gates in the **foreground** (so their verdicts come back in the tool result of
-that one parallel message) is the clean path — it needs no follow-up retrieval. If instead
-you spawn them in the background, **wait for each gate's completion notification** — the
-verdict arrives on its own. Do **not** fetch a still-running gate's output to "check on
-it": retrieving a running sub-agent's output returns its raw transcript, not a verdict, and
-burns context for nothing. Note the audit hook (`run-check.sh`) nudges you when a gate is
-*dispatched*, not when its verdict is ready — for a backgrounded gate that fires at spawn,
-so treat it as "remember to journal this once it returns," not as a signal to go looking.
+**Run the gates in the foreground** (`run_in_background: false` on every gate's Agent
+call) so all verdicts come back in the tool results of that one parallel message.
+Foreground is the rule, not a preference: the gates in one message run concurrently
+either way, so backgrounding buys no wall-clock time — but it turns the wait into a
+stream of Stop-hook wake-ups and "still waiting" turns, each re-reading the entire
+conversation prefix. A measured session spent ~30M cache-read tokens (its dominant cost)
+idling through a backgrounded barrier that foreground would have collected in a single
+request. If a gate somehow ends up backgrounded anyway, **wait for its completion
+notification** — the verdict arrives on its own. Do **not** fetch a still-running gate's
+output to "check on it" (that returns its raw transcript, not a verdict) and do **not**
+poll its output file or the clock — every poll turn is another full-prefix cache read
+that changes nothing. Note the audit hook (`run-check.sh`) nudges you when a gate is
+*dispatched*, not when its verdict is ready — treat it as "remember to journal this once
+the verdicts are in," never as a signal to go looking.
 
 ### Acceptance gate (always)
 
@@ -80,8 +86,11 @@ off, the agent isn't installed, or the diff adds no request path.
 
 ## Record each gate run (the Audit step)
 
-After a gate agent returns — PASS, BLOCK, or SKIP — append a `run` journal entry
-(`type: run`) with its `agent`, `task`, `verdict`, the `critical`/`high` counts it
+Once the barrier's verdicts are all in — PASS, BLOCK, or SKIP — append the `run` journal
+entries for **every gate in one write** (one entry per gate, batched in a single append
+rather than one bookkeeping turn per gate as each returns; the barrier synchronized
+anyway, and each extra write is a full-prefix turn). Each entry (`type: run`) carries its
+`agent`, `task`, `verdict`, the `critical`/`high` counts it
 reported (the BLOCKER count for the observability gate; none for a runtime SKIP), the
 task's `rework` count so far (how many times it has looped back through this gate), and
 `approver` (null unless a named human approved a gated action). These are **structured
@@ -89,7 +98,11 @@ fields, not prose**: the `run-check.sh` hook records that a gate ran and nudges 
 the `Stop` hook then refuses to stop until every recorded gate run has a matching,
 well-formed `run` entry (a missing or prose-only entry is an error, not just a nudge).
 These entries feed `STATUS.md`'s **Pipeline health**. The security gate at `gh pr create`
-records its own `run` entry the same way.
+records its own `run` entry the same way. The same batching applies to the rest of the
+all-PASS bookkeeping below — validation record, barrier-verdict file, status flip — do it
+as a few consolidated writes after the barrier resolves, and regenerate `STATUS.md`
+**once** at the natural pause (after Land, or when handing back), not after each
+intermediate journal append.
 
 The validation record is the **single home** for gate detail — one record per slice,
 each gate a section. `run` entries stay a terse one-line metric (gate · SHA · verdict ·
