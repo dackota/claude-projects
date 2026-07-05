@@ -299,6 +299,25 @@ that holds it (the *where*).
    recall the `grill-with-docs → to-prd → to-issues → tdd` sequence. Run it any
    time mid-session to ask "where am I / what's next?".
 
+## Keeping context lean
+
+Prompt caching re-reads the whole conversation prefix every turn, so a session
+that never resets pays for its entire history repeatedly (cache-read is
+cumulative across turns, not a snapshot of current context). Keep the main
+thread short:
+
+- **Start a fresh session at natural boundaries** — after a slice lands / is
+  PR'd, and at the planning→build seam (`/next` already hands off there).
+  `STATUS.md` + `journal.yaml` carry state forward, so the next session needs the
+  artifacts, not this thread's history.
+- **Delegate broad exploration** to a read-only sub-agent (`codebase-researcher`,
+  or a general search agent) and keep only its conclusions + `file:line` pointers
+  in the main thread — don't read many files into the orchestrator to hand-assemble
+  context a sub-agent could gather in its own disposable context.
+- **Don't restate what artifacts already hold.** Gate/build detail lives in
+  `docs/validations/` and `journal.yaml`; link to it rather than re-summarizing it
+  back into the thread.
+
 ## Files & directories
 
 - `project.yaml` — source of truth: repos, tasks, Jira key, config

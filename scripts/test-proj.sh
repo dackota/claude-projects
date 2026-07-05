@@ -71,6 +71,7 @@ assert "CLAUDE.md: points to canonical BARRIER.md" "$(grep -q 'BARRIER.md' "$TAR
 assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: surface-based security skip" "$(grep -q 'trust-boundary' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: size-based skip retired"   "$(! grep -q '25 lines' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: session-hygiene guidance"  "$(grep -q 'Keeping context lean' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
 assert "STATUS.md has last_synced: null"      "$(grep -q 'last_synced: null' "$TARGET/STATUS.md" && echo true || echo false)"
