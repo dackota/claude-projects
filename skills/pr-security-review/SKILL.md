@@ -59,8 +59,12 @@ and the gate honors a recorded verdict over any skip rule.
    It prints any of `code`, `infra`, `surface`, or nothing — `code`/`surface` →
    security-review checklist, `infra` → cloud-infra-security checklist, and `surface`
    flags that the code diff touches a trust boundary. If it prints nothing
-   (docs/config only), the review is a trivial PASS — skip the agent and record a
-   PASS verdict.
+   (docs/config only), the review is a trivial PASS — skip the agent and record it
+   with the classify-verified trivial mode (needed because `repo.sh pr` requires a
+   verdict file even for a docs-only PR):
+   ```
+   bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/record-verdict.sh --trivial "$BASE"
+   ```
 
 3. **Security review.** Launch the `security-reviewer` agent (Agent tool,
    `subagent_type: security-reviewer`) with a fresh context, given only the diff
@@ -73,13 +77,29 @@ and the gate honors a recorded verdict over any skip rule.
    returns `VERDICT: PASS|BLOCK` + severity counts + findings; `BLOCK` iff
    `CRITICAL > 0`.
 
-4. **Record the verdict** (the hook reads the first line):
+4. **Record the verdict — pipe the reviewer's output through the recorder; do
+   NOT hand-write it.** Do **not** `printf 'PASS' > "$verdict_file"`. The
+   orchestrator (the same agent trying to open the PR) hand-authoring a `PASS`
+   into the gate file is structurally indistinguishable from a gate bypass —
+   nothing links that literal `PASS` to a review that ran — and an auto-mode
+   safety classifier will (correctly) refuse it as fabrication. Instead pipe the
+   security-reviewer's **verbatim output** through `record-verdict.sh`, which
+   parses the `VERDICT`/severity block, enforces the invariant (BLOCK iff
+   CRITICAL>0), and writes the SHA-keyed file itself:
    ```
-   mkdir -p "$GITDIR/pr-security-review"
-   printf '%s\nSECURITY %s C:%s H:%s M:%s L:%s\n' \
-     "$verdict" "$verdict" "$sCrit" "$sHigh" "$sMed" "$sLow" \
-     > "$GITDIR/pr-security-review/$SHA"
+   bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/record-verdict.sh <<'REVIEW'
+   <the security-reviewer's verbatim output — the VERDICT/CRITICAL/HIGH/MEDIUM/LOW
+   block and its findings, exactly as returned>
+   REVIEW
    ```
+   Run it from inside the repo/worktree being gated — it derives `HEAD` itself
+   (so a verdict can't be recorded for the wrong commit) and refuses a bare or
+   absent verdict, or one whose count disagrees with the invariant, writing
+   nothing on refusal. (If a classifier still blocks even this derived,
+   invariant-checked recording, that's a false positive on a legitimate review:
+   the reviewer's output is your evidence — surface it and use the documented
+   `--web` fallback below rather than a raw hand-write.)
+
    Then append a `run` journal entry (`type: run`, `agent: security-reviewer`, the
    task id, `verdict`, `critical`/`high` counts, `rework`, `approver`): the `.git/`
    verdict gates the PR, while the journal entry is the durable audit trail that

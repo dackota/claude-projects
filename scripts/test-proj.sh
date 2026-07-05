@@ -777,6 +777,78 @@ echo z >> "$CFW/README.md"; git -C "$CFW" commit -qam docs2
 cf_noprev=false; ( cd "$CFW" && bash "$CF" "$CF_H2" >/dev/null 2>&1 ) || cf_noprev=true
 assert "carry-forward: refused without prior PASS"  "$([[ "$cf_noprev" == "true" ]] && echo true || echo false)"
 
+# ── record-verdict.sh / record-barrier-gate.sh: derive+validate gate verdicts ──
+# The verdict files are recorded by DERIVING them from the review agent's verbatim
+# output through a validating recorder, never hand-authored by the orchestrator
+# (see record-verdict.sh's header). These assert the derivation, the invariant
+# enforcement, and the refusal-writes-nothing guarantee.
+RV="${SCRIPT_DIR}/../skills/pr-security-review/record-verdict.sh"
+RB="${SCRIPT_DIR}/../skills/next/record-barrier-gate.sh"
+assert "record-verdict: helper exists"              "$([[ -f $RV ]] && echo true || echo false)"
+assert "record-barrier-gate: helper exists"         "$([[ -f $RB ]] && echo true || echo false)"
+assert "SKILL.md uses record-verdict (not printf>)" "$(grep -q 'record-verdict.sh' "${SCRIPT_DIR}/../skills/pr-security-review/SKILL.md" && echo true || echo false)"
+assert "BARRIER.md uses record-barrier-gate"        "$(grep -q 'record-barrier-gate.sh' "${SCRIPT_DIR}/../skills/next/BARRIER.md" && echo true || echo false)"
+
+REC="${TMPDIR_BASE}/rec/repo"; mkdir -p "$REC"
+git init -q "$REC"; git -C "$REC" config user.email t@t.test; git -C "$REC" config user.name Test; git -C "$REC" config commit.gpgsign false
+echo base > "$REC/README.md"; git -C "$REC" add -A; git -C "$REC" commit -qm base
+git -C "$REC" branch -M main
+REC_GD="$(git -C "$REC" rev-parse --absolute-git-dir)"
+REC_VF="$REC_GD/pr-security-review/$(git -C "$REC" rev-parse HEAD)"
+rv() { local rc=0; ( cd "$REC" && printf '%s' "$1" | bash "$RV" ) >/dev/null 2>&1 || rc=$?; echo "$rc"; }
+
+# valid PASS (with prose preamble) -> recorded, invariant-consistent file
+assert "record-verdict: valid PASS recorded"        "$([[ "$(rv 'noise here
+VERDICT: PASS
+CRITICAL: 0
+HIGH: 1
+MEDIUM: 0
+LOW: 0')" == "0" && "$(head -n1 "$REC_VF")" == "PASS" ]] && echo true || echo false)"
+# valid BLOCK
+assert "record-verdict: valid BLOCK recorded"       "$([[ "$(rv 'VERDICT: BLOCK
+CRITICAL: 2
+HIGH: 0
+MEDIUM: 0
+LOW: 0')" == "0" && "$(head -n1 "$REC_VF")" == "BLOCK" ]] && echo true || echo false)"
+# INVARIANT: PASS with CRITICAL>0 is rejected AND must not clobber the prior file
+assert "record-verdict: PASS+CRITICAL>0 rejected"   "$([[ "$(rv 'VERDICT: PASS
+CRITICAL: 1
+HIGH: 0
+MEDIUM: 0
+LOW: 0')" != "0" && "$(head -n1 "$REC_VF")" == "BLOCK" ]] && echo true || echo false)"
+# a bare PASS with no severity block is refused and writes nothing for a fresh sha
+git -C "$REC" commit -q --allow-empty -m e2
+REC_VF2="$REC_GD/pr-security-review/$(git -C "$REC" rev-parse HEAD)"
+assert "record-verdict: bare PASS refused, no file"  "$([[ "$(rv 'PASS')" != "0" && ! -f "$REC_VF2" ]] && echo true || echo false)"
+# --trivial: docs-only diff (README) is a verified trivial PASS; a code diff is refused
+git -C "$REC" checkout -q -b docs-delta main
+echo more >> "$REC/README.md"; git -C "$REC" commit -qam docs
+REC_VFD="$REC_GD/pr-security-review/$(git -C "$REC" rev-parse HEAD)"
+trivial_docs=0; ( cd "$REC" && bash "$RV" --trivial main ) >/dev/null 2>&1 || trivial_docs=$?
+assert "record-verdict: --trivial docs-only writes"  "$([[ "$trivial_docs" == "0" && "$(head -n1 "$REC_VFD")" == "PASS" ]] && echo true || echo false)"
+git -C "$REC" checkout -q -b code-delta main
+echo 'print(1)' > "$REC/app.py"; git -C "$REC" add -A; git -C "$REC" commit -qm code
+REC_VFC="$REC_GD/pr-security-review/$(git -C "$REC" rev-parse HEAD)"
+trivial_code=0; ( cd "$REC" && bash "$RV" --trivial main ) >/dev/null 2>&1 || trivial_code=$?
+assert "record-verdict: --trivial refuses code diff" "$([[ "$trivial_code" != "0" && ! -f "$REC_VFC" ]] && echo true || echo false)"
+
+# barrier recorder: per-gate upsert, verdict validation, refusal writes nothing
+git -C "$REC" checkout -q main
+REC_BF="$REC_GD/barrier-review/$(git -C "$REC" rev-parse HEAD)"
+rb() { local rc=0; ( cd "$REC" && printf '%s' "$2" | bash "$RB" "$1" ) >/dev/null 2>&1 || rc=$?; echo "$rc"; }
+rb acceptance  'VERDICT: PASS'  >/dev/null
+rb correctness 'VERDICT: PASS'  >/dev/null
+rb runtime     'no surface
+VERDICT: SKIP'                  >/dev/null
+assert "record-barrier-gate: records 3 gate lines"  "$([[ "$(awk '$1=="acceptance"{print $2}' "$REC_BF")" == "PASS" && "$(awk '$1=="correctness"{print $2}' "$REC_BF")" == "PASS" && "$(awk '$1=="runtime"{print $2}' "$REC_BF")" == "SKIP" ]] && echo true || echo false)"
+# upsert: re-recording correctness as BLOCK replaces just its line
+rb correctness 'VERDICT: BLOCK' >/dev/null
+assert "record-barrier-gate: upsert one gate line"  "$([[ "$(awk '$1=="correctness"{print $2}' "$REC_BF")" == "BLOCK" && "$(grep -c '^correctness ' "$REC_BF")" == "1" && "$(awk '$1=="acceptance"{print $2}' "$REC_BF")" == "PASS" ]] && echo true || echo false)"
+# SKIP is runtime-only; unknown gate and missing VERDICT are refused
+assert "record-barrier-gate: acceptance SKIP refused" "$([[ "$(rb acceptance 'VERDICT: SKIP')" != "0" ]] && echo true || echo false)"
+assert "record-barrier-gate: unknown gate refused"    "$([[ "$(rb security 'VERDICT: PASS')" != "0" ]] && echo true || echo false)"
+assert "record-barrier-gate: no VERDICT line refused" "$([[ "$(rb acceptance 'looks good to me')" != "0" ]] && echo true || echo false)"
+
 # ── next skill: orchestrator install + dependency resolution ──────────────────
 NT="${TMPDIR_BASE}/next-test"
 bash "$PROJ" "next-test" --dir "$TMPDIR_BASE" --skills next >/dev/null
