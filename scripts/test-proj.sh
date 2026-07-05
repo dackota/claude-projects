@@ -193,6 +193,9 @@ gaterun() {
 # schema doc must admit SKIP (the runtime gate's verdict)
 assert "journal skill: verdict enum includes SKIP" \
   "$(grep -qE 'verdict:.*\bSKIP\b' "$RT/.claude/skills/journal/SKILL.md" && echo true || echo false)"
+# and document that a SKIP verdict requires a reason field
+assert "journal skill: SKIP requires reason" \
+  "$(grep -qiE 'required for (a )?.?SKIP' "$RT/.claude/skills/journal/SKILL.md" && echo true || echo false)"
 
 # a well-formed run entry (all required fields) passes the Stop gate
 FX_OK="${TMPDIR_BASE}/a1-ok"; mkdir -p "$FX_OK"
@@ -210,7 +213,7 @@ cat > "$FX_OK/journal.yaml" <<'EOF'
 EOF
 assert "stop: well-formed run entry passes"        "$([[ "$(stopcheck "$FX_OK")" == "0" ]] && echo true || echo false)"
 
-# verdict SKIP is valid (runtime gate emits it)
+# verdict SKIP is valid (runtime gate emits it) — but a SKIP must carry a reason
 FX_SKIP="${TMPDIR_BASE}/a1-skip"; mkdir -p "$FX_SKIP"
 cat > "$FX_SKIP/journal.yaml" <<'EOF'
 - date: 2026-07-03
@@ -221,10 +224,28 @@ cat > "$FX_SKIP/journal.yaml" <<'EOF'
   critical: 0
   high: 0
   rework: 0
+  reason: no runnable surface
   summary: runtime SKIP — no runnable surface
   refs: [pure-lib]
 EOF
 assert "stop: verdict SKIP accepted"               "$([[ "$(stopcheck "$FX_SKIP")" == "0" ]] && echo true || echo false)"
+
+# a SKIP run entry with NO reason is rejected — a reasonless skip is the "silent skip"
+# the barrier forbids (the reason is the sole control on a self-initiated skip).
+FX_SKIPNR="${TMPDIR_BASE}/a1-skip-noreason"; mkdir -p "$FX_SKIPNR"
+cat > "$FX_SKIPNR/journal.yaml" <<'EOF'
+- date: 2026-07-03
+  type: run
+  agent: correctness-reviewer
+  task: spike
+  verdict: SKIP
+  critical: 0
+  high: 0
+  rework: 0
+  summary: correctness skipped
+  refs: [spike]
+EOF
+assert "stop: SKIP without reason blocked"         "$([[ "$(stopcheck "$FX_SKIPNR")" == "2" ]] && echo true || echo false)"
 
 # a prose-only run entry (the drift we found) is rejected
 FX_PROSE="${TMPDIR_BASE}/a1-prose"; mkdir -p "$FX_PROSE"
@@ -543,6 +564,53 @@ if command -v yq >/dev/null 2>&1; then
   rm -rf "$RT/worktrees/prune-probe"
   repo status >/dev/null 2>&1
   assert "status: prunes orphaned worktree entry"   "$(! git -C "$RT/repos/remote" worktree list | grep -q '/prune-probe/' && echo true || echo false)"
+
+  # ── repo.sh pr: barrier self-enforcement must agree with barrier-gate.sh ──────
+  # The primary Land path opens PRs via `repo.sh pr` (gh runs internally, so the
+  # PreToolUse barrier-gate hook never sees it). It self-enforces the barrier and must
+  # honor an AUDITED skip (SKIP + reason) exactly like the raw-gh path, and still block a
+  # reasonless SKIP — otherwise a skipped gate blocks on the very path /next uses.
+  yq e -i '.tasks += [{"id":"slice-pr","title":"pr","type":"AFK","status":"active","blocked_by":[]}]' "$RT/project.yaml"
+  repo worktree slice-pr remote >/dev/null 2>&1
+  PRWT="$RT/worktrees/slice-pr/remote"
+  wt_commit "$PRWT" pr.txt "work" "pr work"                # one commit ahead of origin/main
+  PRGD="$(git -C "$PRWT" rev-parse --absolute-git-dir)"
+  PRSHA="$(git -C "$PRWT" rev-parse HEAD)"
+  mkdir -p "$PRGD/pr-security-review" "$PRGD/barrier-review"
+  echo PASS > "$PRGD/pr-security-review/$PRSHA"            # security gate satisfied
+  # stub gh: capture its argv so we can assert the PR body surfaces the skip (loudly)
+  GHSTUB="${TMPDIR_BASE}/ghstub"; mkdir -p "$GHSTUB"
+  GHARGS="${TMPDIR_BASE}/ghargs"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "$GHARGS" > "$GHSTUB/gh"; chmod +x "$GHSTUB/gh"
+  # audited SKIP on acceptance + correctness PASS -> repo.sh pr proceeds past the barrier
+  # AND surfaces the skip in the PR body (the compensating control).
+  printf 'acceptance SKIP pure rename, no logic\ncorrectness PASS\n' > "$PRGD/barrier-review/$PRSHA"
+  rm -f "$GHARGS"
+  pr_skip_rc=0; ( cd "$RT" && PATH="$GHSTUB:$PATH" bash scripts/repo.sh pr slice-pr remote ) >/dev/null 2>&1 || pr_skip_rc=$?
+  assert "repo.sh pr: honors audited SKIP"          "$([[ "$pr_skip_rc" == "0" ]] && echo true || echo false)"
+  assert "repo.sh pr: PR body surfaces the skip"    "$([[ -f "$GHARGS" ]] && grep -q 'Skipped reviews' "$GHARGS" && grep -q 'acceptance' "$GHARGS" && echo true || echo false)"
+  # extra gh args (the script's own documented `-- --draft` example) must NOT silently
+  # drop the disclosure — the section is mandatory, and unrelated flags are preserved.
+  rm -f "$GHARGS"
+  pr_draft_rc=0; ( cd "$RT" && PATH="$GHSTUB:$PATH" bash scripts/repo.sh pr slice-pr remote -- --draft ) >/dev/null 2>&1 || pr_draft_rc=$?
+  assert "repo.sh pr: --draft keeps disclosure"     "$([[ "$pr_draft_rc" == "0" && -f "$GHARGS" ]] && grep -q 'Skipped reviews' "$GHARGS" && grep -q -- '--draft' "$GHARGS" && echo true || echo false)"
+  # a security SKIP (recorded via record-verdict --skip from the worktree) is honored too,
+  # and listed in the PR body.
+  git -C "$PRWT" -c user.email=t@t.test -c user.name=T -c commit.gpgsign=false commit -q --allow-empty -m sec
+  PRSHA_S="$(git -C "$PRWT" rev-parse HEAD)"
+  printf 'acceptance PASS\ncorrectness PASS\n' > "$PRGD/barrier-review/$PRSHA_S"
+  ( cd "$PRWT" && bash "$RT/.claude/skills/pr-security-review/record-verdict.sh" --skip --reason "docs-only, no code path" ) >/dev/null 2>&1
+  rm -f "$GHARGS"
+  pr_sec_rc=0; ( cd "$RT" && PATH="$GHSTUB:$PATH" bash scripts/repo.sh pr slice-pr remote ) >/dev/null 2>&1 || pr_sec_rc=$?
+  assert "repo.sh pr: honors security SKIP"         "$([[ "$pr_sec_rc" == "0" ]] && echo true || echo false)"
+  assert "repo.sh pr: PR body lists security skip"  "$([[ -f "$GHARGS" ]] && grep -q 'security: docs-only' "$GHARGS" && echo true || echo false)"
+  # a reasonless SKIP still blocks (new HEAD so the prior verdict/push don't carry over)
+  git -C "$PRWT" -c user.email=t@t.test -c user.name=T -c commit.gpgsign=false commit -q --allow-empty -m again
+  PRSHA2="$(git -C "$PRWT" rev-parse HEAD)"
+  echo PASS > "$PRGD/pr-security-review/$PRSHA2"
+  printf 'acceptance SKIP\ncorrectness PASS\n' > "$PRGD/barrier-review/$PRSHA2"
+  pr_nr_rc=0; ( cd "$RT" && PATH="$GHSTUB:$PATH" bash scripts/repo.sh pr slice-pr remote ) >/dev/null 2>&1 || pr_nr_rc=$?
+  assert "repo.sh pr: blocks reasonless SKIP"       "$([[ "$pr_nr_rc" != "0" ]] && echo true || echo false)"
 else
   echo "  (skipping repo.sh lifecycle tests — yq not installed)"
 fi
@@ -572,6 +640,7 @@ assert "pr-review: agent copied to .claude/agents"  "$([[ -f $RT/.claude/agents/
 assert "pr-review: pr-gate hook wired in settings"  "$([[ "$(count_cmd pr-gate)" == "1" ]] && echo true || echo false)"
 assert "pr-review: SKILL warns record-then-create"  "$(grep -q 'two separate Bash calls' "$RT/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
 assert "pr-review: SKILL documents surface-skip"    "$(grep -q 'trust-boundary surface' "$RT/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
+assert "pr-review: SKILL documents --skip"          "$(grep -q -- '--skip' "$RT/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
 
 CLASSIFY="$RT/.claude/skills/pr-security-review/classify.sh"
 PR_GATE="$RT/.claude/skills/pr-security-review/hooks/pr-gate.sh"
@@ -674,6 +743,14 @@ git -C "$CLS" checkout -q small-code
 printf 'BLOCK\nCRITICAL:1\n' > "$VERDICT_DIR/$(sha_of)"
 assert "gate: BLOCK verdict blocks pure diff"       "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
 
+# An AUDITED security SKIP (first line `SKIP <reason>`) is honored; a reasonless SKIP
+# blocks — the security lens follows the barrier's "no silent skip" model.
+git -C "$CLS" checkout -q surface-gate
+printf 'SKIP docs-only touch, no code path\nSECURITY SKIP docs-only touch, no code path\n' > "$VERDICT_DIR/$(sha_of)"
+assert "gate: honors audited security SKIP"         "$([[ "$(prgate 'gh pr create -t x')" == "0" ]] && echo true || echo false)"
+printf 'SKIP\n' > "$VERDICT_DIR/$(sha_of)"
+assert "gate: blocks reasonless security SKIP"      "$([[ "$(prgate 'gh pr create -t x')" == "2" ]] && echo true || echo false)"
+
 # Marker override: force a pure diff to register a surface -> reviewed.
 git -C "$CLS" checkout -q big-code; rm -f "$VERDICT_DIR/$(sha_of)"
 export PR_SECURITY_SURFACE_MARKERS='value_'
@@ -740,6 +817,12 @@ printf 'acceptance PASS\ncorrectness PASS\n' > "$BG_VDIR/$BG_SHA"
 assert "barrier-gate: honors PASS/PASS verdict"      "$([[ "$(bgate "$BG_NONEXT" "$BG_WT")" == "0" ]] && echo true || echo false)"
 printf 'acceptance PASS\ncorrectness BLOCK\n' > "$BG_VDIR/$BG_SHA"
 assert "barrier-gate: blocks recorded non-PASS"      "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "2" ]] && echo true || echo false)"
+# An AUDITED skip (SKIP + a reason on the line) satisfies the gate — "no silent skip":
+# the reason is what distinguishes it from a bypass. A reasonless SKIP is still blocked.
+printf 'acceptance SKIP pure rename, no logic change\ncorrectness PASS\n' > "$BG_VDIR/$BG_SHA"
+assert "barrier-gate: honors audited SKIP+reason"    "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "0" ]] && echo true || echo false)"
+printf 'acceptance SKIP\ncorrectness PASS\n' > "$BG_VDIR/$BG_SHA"
+assert "barrier-gate: blocks reasonless SKIP"        "$([[ "$(bgate "$BG_FULL" "$BG_WT")" == "2" ]] && echo true || echo false)"
 rm -rf "$BG_VDIR"
 # Inline / ad-hoc PR (cwd not under worktrees/) is allowed even with next installed.
 BG_INLINE="${TMPDIR_BASE}/bg-inline"
@@ -788,6 +871,7 @@ assert "record-verdict: helper exists"              "$([[ -f $RV ]] && echo true
 assert "record-barrier-gate: helper exists"         "$([[ -f $RB ]] && echo true || echo false)"
 assert "SKILL.md uses record-verdict (not printf>)" "$(grep -q 'record-verdict.sh' "${SCRIPT_DIR}/../skills/pr-security-review/SKILL.md" && echo true || echo false)"
 assert "BARRIER.md uses record-barrier-gate"        "$(grep -q 'record-barrier-gate.sh' "${SCRIPT_DIR}/../skills/next/BARRIER.md" && echo true || echo false)"
+assert "BARRIER.md documents --skip protocol"       "$(grep -q -- '--skip' "${SCRIPT_DIR}/../skills/next/BARRIER.md" && echo true || echo false)"
 
 REC="${TMPDIR_BASE}/rec/repo"; mkdir -p "$REC"
 git init -q "$REC"; git -C "$REC" config user.email t@t.test; git -C "$REC" config user.name Test; git -C "$REC" config commit.gpgsign false
@@ -832,6 +916,21 @@ REC_VFC="$REC_GD/pr-security-review/$(git -C "$REC" rev-parse HEAD)"
 trivial_code=0; ( cd "$REC" && bash "$RV" --trivial main ) >/dev/null 2>&1 || trivial_code=$?
 assert "record-verdict: --trivial refuses code diff" "$([[ "$trivial_code" != "0" && ! -f "$REC_VFC" ]] && echo true || echo false)"
 
+# record-verdict --skip: an audited security skip (reason mandatory) — same model as
+# the barrier recorder, so the security lens can be intentionally skipped for one run.
+git -C "$REC" checkout -q main
+RV_SF="$REC_GD/pr-security-review/$(git -C "$REC" rev-parse HEAD)"
+rm -f "$RV_SF"
+rvskip=0; ( cd "$REC" && bash "$RV" --skip --reason "docs-only, no code path" ) >/dev/null 2>&1 || rvskip=$?
+assert "record-verdict: --skip records SKIP+reason" "$([[ "$rvskip" == "0" && "$(awk 'NR==1{print $1}' "$RV_SF")" == "SKIP" ]] && grep -q '^SKIP docs-only' "$RV_SF" && echo true || echo false)"
+rm -f "$RV_SF"
+rvempty=0; ( cd "$REC" && bash "$RV" --skip --reason "   " ) >/dev/null 2>&1 || rvempty=$?
+assert "record-verdict: --skip empty reason refused" "$([[ "$rvempty" != "0" && ! -f "$RV_SF" ]] && echo true || echo false)"
+rvnoreason=0; ( cd "$REC" && bash "$RV" --skip ) >/dev/null 2>&1 || rvnoreason=$?
+assert "record-verdict: --skip needs --reason"      "$([[ "$rvnoreason" != "0" ]] && echo true || echo false)"
+rvreasononly=0; ( cd "$REC" && bash "$RV" --reason "x" </dev/null ) >/dev/null 2>&1 || rvreasononly=$?
+assert "record-verdict: --reason needs --skip"      "$([[ "$rvreasononly" != "0" ]] && echo true || echo false)"
+
 # barrier recorder: per-gate upsert, verdict validation, refusal writes nothing
 git -C "$REC" checkout -q main
 REC_BF="$REC_GD/barrier-review/$(git -C "$REC" rev-parse HEAD)"
@@ -848,6 +947,21 @@ assert "record-barrier-gate: upsert one gate line"  "$([[ "$(awk '$1=="correctne
 assert "record-barrier-gate: acceptance SKIP refused" "$([[ "$(rb acceptance 'VERDICT: SKIP')" != "0" ]] && echo true || echo false)"
 assert "record-barrier-gate: unknown gate refused"    "$([[ "$(rb security 'VERDICT: PASS')" != "0" ]] && echo true || echo false)"
 assert "record-barrier-gate: no VERDICT line refused" "$([[ "$(rb acceptance 'looks good to me')" != "0" ]] && echo true || echo false)"
+
+# per-run audited SKIP (--skip --reason): ANY gate may be intentionally skipped, but only
+# WITH a non-empty reason, written via the recorder (never hand-authored) — the derive
+# path above still refuses a stdin SKIP for a non-runtime gate.
+rbskip() { local rc=0; ( cd "$REC" && bash "$RB" "$1" --skip --reason "$2" ) >/dev/null 2>&1 || rc=$?; echo "$rc"; }
+assert "record-barrier-gate: --skip records SKIP+reason" "$([[ "$(rbskip acceptance 'pure rename, no logic change')" == "0" && "$(awk '$1=="acceptance"{print $2}' "$REC_BF")" == "SKIP" ]] && grep -q '^acceptance SKIP pure rename' "$REC_BF" && echo true || echo false)"
+assert "record-barrier-gate: --skip any gate"           "$([[ "$(rbskip observability 'no request path this run')" == "0" && "$(awk '$1=="observability"{print $2}' "$REC_BF")" == "SKIP" ]] && echo true || echo false)"
+# empty/whitespace reason is refused and must NOT clobber the prior correctness BLOCK line
+assert "record-barrier-gate: --skip empty reason refused" "$([[ "$(rbskip correctness '   ')" != "0" && "$(awk '$1=="correctness"{print $2}' "$REC_BF")" == "BLOCK" ]] && echo true || echo false)"
+# --skip with no --reason flag at all is refused
+rb_noreason=0; ( cd "$REC" && bash "$RB" runtime --skip ) >/dev/null 2>&1 || rb_noreason=$?
+assert "record-barrier-gate: --skip needs --reason"     "$([[ "$rb_noreason" != "0" ]] && echo true || echo false)"
+# --reason without --skip is a usage error (not a silent revert to the stdin-derive path)
+rb_reason_noskip=0; ( cd "$REC" && bash "$RB" acceptance --reason "x" </dev/null ) >/dev/null 2>&1 || rb_reason_noskip=$?
+assert "record-barrier-gate: --reason needs --skip"     "$([[ "$rb_reason_noskip" != "0" ]] && echo true || echo false)"
 
 # ── next skill: orchestrator install + dependency resolution ──────────────────
 NT="${TMPDIR_BASE}/next-test"
@@ -1048,6 +1162,10 @@ SS="$RT/.claude/skills/sync-status/SKILL.md"
 assert "sync-status: by-gate includes correctness"  "$(grep -qE 'By gate:.*correctness' "$SS" && echo true || echo false)"
 assert "sync-status: by-gate includes runtime"      "$(grep -qE 'By gate:.*runtime'     "$SS" && echo true || echo false)"
 assert "sync-status: surfaces runtime SKIP dormancy" "$(grep -q 'Runtime gate:' "$SS" && grep -q 'SKIP' "$SS" && echo true || echo false)"
+# intentional skips are excluded from the block-rate denominator (like carried_forward)
+# and surfaced as a distinct tally
+assert "sync-status: skip tally line"               "$(grep -q 'Skipped:' "$SS" && echo true || echo false)"
+assert "sync-status: SKIP excluded from block rate" "$(grep -qiE 'exclude.*SKIP|SKIP.*(block-rate|denominator)' "$SS" && echo true || echo false)"
 
 # A5: gate rules have a single normative home — no restatement outside BARRIER.md
 A5_LEAK=$(grep -rlF -e 'the 3rd rework is allowed' -e 'advances only if **all** PASS' "$RT/.claude/skills" 2>/dev/null | grep -v '/next/BARRIER.md' || true)

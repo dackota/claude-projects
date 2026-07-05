@@ -16,7 +16,9 @@
 #     runtime SKIP          # optional (PASS|BLOCK|SKIP) — not gated here
 #     observability PASS    # optional — not gated here
 # at "$GITDIR/barrier-review/$SHA" (GITDIR = git rev-parse --absolute-git-dir).
-# This gate requires acceptance == PASS AND correctness == PASS for HEAD.
+# This gate requires acceptance AND correctness each == PASS for HEAD, OR an AUDITED
+# SKIP (`<gate> SKIP <reason>` — a reasonless SKIP is refused; see "no silent skip",
+# next/BARRIER.md).
 #
 # Decision order for the `gh pr create` HEAD commit:
 #   1. A barrier verdict recorded for HEAD -> honor it (both PASS -> allow the
@@ -74,14 +76,31 @@ if [[ -f "$integration_file" ]]; then
     block "integration review for HEAD ($sha) is '${iv:-none}' — the assembled branch has an unresolved cross-slice/integration defect (see next/INTEGRATION-REVIEW.md). Reconcile it with a corrective slice (a new commit re-runs the review), re-record the verdict, then re-run gh pr create."
 fi
 
+# A gate line satisfies the barrier if it is PASS, or an AUDITED SKIP — a `SKIP` that
+# carries a non-empty reason (fields 3+, i.e. `<gate> SKIP <why>`). A reasonless SKIP is
+# a *silent* skip and does NOT satisfy the gate: the invariant is "no silent skip", and
+# the reason is the sole control on a self-initiated skip (see next/BARRIER.md, "Skipping a
+# gate for one run"). record-barrier-gate.sh --skip enforces the reason at the write; this
+# enforces it at the read, so a hand-written reasonless SKIP still blocks.
+gate_verdict() { grep -E "^$1[[:space:]]" "$verdict_file" 2>/dev/null | head -n1 | awk '{print $2}'; }
+gate_satisfied() {
+  local line v
+  line="$(grep -E "^$1[[:space:]]" "$verdict_file" 2>/dev/null | head -n1)"
+  [[ -z "$line" ]] && return 1
+  v="$(printf '%s' "$line" | awk '{print $2}')"
+  [[ "$v" == "PASS" ]] && return 0
+  # SKIP satisfies only with a reason present (NF >= 3 → text follows "<gate> SKIP").
+  [[ "$v" == "SKIP" && "$(printf '%s' "$line" | awk '{print (NF>=3)}')" == "1" ]] && return 0
+  return 1
+}
+
 # 1. Honor an existing barrier verdict for HEAD.
 if [[ -f "$verdict_file" ]]; then
-  acc="$(grep -E '^acceptance[[:space:]]' "$verdict_file" 2>/dev/null | head -n1 | awk '{print $2}')"
-  cor="$(grep -E '^correctness[[:space:]]' "$verdict_file" 2>/dev/null | head -n1 | awk '{print $2}')"
-  if [[ "$acc" == "PASS" && "$cor" == "PASS" ]]; then
+  if gate_satisfied acceptance && gate_satisfied correctness; then
     exit 0
   fi
-  block "post-build barrier for HEAD ($sha) is not PASS (acceptance=${acc:-none}, correctness=${cor:-none}). Close the flagged gaps — each fix is a new commit that re-runs the gate(s) — then re-record the verdict and re-run gh pr create."
+  acc="$(gate_verdict acceptance)"; cor="$(gate_verdict correctness)"
+  block "post-build barrier for HEAD ($sha) is not satisfied (acceptance=${acc:-none}, correctness=${cor:-none}). Each gate must be PASS or an AUDITED SKIP (SKIP + a reason — a reasonless skip is refused). Close the flagged gaps — each fix is a new commit that re-runs the gate(s) — then re-record the verdict and re-run gh pr create."
 fi
 
 # No verdict recorded. Only FORCE the barrier for a pipeline task-worktree PR.

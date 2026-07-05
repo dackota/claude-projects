@@ -61,10 +61,11 @@ the `/sync-status` **Pipeline health** surface rolls up:
   type: run
   agent: implementation-validator   # which review/gate agent ran
   task: add-login-endpoint          # the task id under review
-  verdict: PASS | BLOCK | SKIP      # SKIP is the runtime gate's no-runnable-surface verdict
+  verdict: PASS | BLOCK | SKIP      # SKIP = runtime no-runnable-surface, OR an intentional per-run skip of any gate
   critical: 0                       # counts as the agent reported them (BLOCKER for otel; observed runtime failures for runtime-validator)
   high: 0
   rework: 2                         # times this task looped back through this gate so far
+  reason: no runnable surface       # required for a SKIP verdict — WHY the gate was skipped (no silent skip)
   approver: null                    # named human who approved a gated action, else null
   gate: release-verify              # optional: only when it differs from the agent's default (e.g. a runtime-validator run in release mode)
   escape: true                      # optional: set when this records a defect that passed the build gates and was caught live
@@ -74,9 +75,12 @@ the `/sync-status` **Pipeline health** surface rolls up:
 
 `agent`, `task`, `verdict` (∈ `PASS`/`BLOCK`/`SKIP`), `critical`, `high`, and `rework`
 are **required structured fields** — the prose `summary` is kept for the narrative but
-does **not** substitute for them. They are enforced: the `Stop` hook rejects a `run`
-entry that carries them only in prose, and the rework cap and cross-workspace rollup
-read them directly. `gate` and `escape` are optional (see comments above).
+does **not** substitute for them. `reason` is **required for a `SKIP`** verdict: a skip
+must state why the gate was skipped (a reasonless skip is the "silent skip" the barrier
+forbids — see `next/BARRIER.md`, "Skipping a gate for one run"). They are enforced: the
+`Stop` hook rejects a `run` entry that carries them only in prose, or a `SKIP` with no
+`reason`, and the rework cap and cross-workspace rollup read them directly. `gate` and
+`escape` are optional (see comments above).
 
 `/next` appends one complete `run` entry after each gate returns — it never edits a
 prior entry (append-only holds). A `PostToolUse` hook (`run-check.sh`) records that a

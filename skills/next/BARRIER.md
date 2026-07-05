@@ -182,6 +182,54 @@ a gate that keeps blocking the same slice signals a **wrong seam, a flaky test, 
 impossible criterion**, not something another build loop will fix. Flip the task to
 `blocked`, write a `blocker` entry with the recurring finding, and hand it to a human.
 
+## Skipping a gate for one run
+
+Sometimes a gate that *would* run doesn't apply to a given slice — a pure-rename slice has
+nothing for the correctness gate to find, a spike branch wants a reduced set of reviews.
+You may **skip any gate for a single run**. The invariant is **not** "gates can't be
+skipped" — it is **"no *silent* skip":** a skipped gate is recorded, honored, and made
+loud, exactly like any other verdict. (The accepted risk: a self-initiated skip has **no
+human approver**, so the recorded reason and the loud PR-body callout are the *only*
+controls — the PR reviewer is the last human check.)
+
+- **Who / when.** You may **self-initiate** a skip (or the user asks for one). No human
+  approver is required (`approver` stays `null`); the recorded **reason** is the sole
+  control, so state it honestly and specifically.
+- **How to record it.** A skip has no gate-agent output to derive from, so record it
+  through the same validating recorder with `--skip`, which **refuses an empty reason**:
+
+  ```
+  bash "$CLAUDE_PROJECT_DIR"/.claude/skills/next/record-barrier-gate.sh correctness \
+    --skip --reason "pure rename across 3 files, no behavioral change"
+  ```
+
+  This upserts `correctness SKIP pure rename across 3 files, no behavioral change` into
+  `barrier-review/<HEAD>`. Any barrier gate (acceptance, correctness, runtime,
+  observability) may be skipped this way. **Never hand-write the SKIP line** — the recorder
+  is the write path, same as for a PASS.
+- **"Skip all reviews this run"** fans out to a per-gate `--skip` for every applicable
+  gate, **sharing one reason** — there is no master off-switch, so each gate is still
+  recorded and honored on its own line. Issue these fan-out calls **in sequence**: they
+  upsert the same `barrier-review/<HEAD>` file, so running them concurrently can drop a
+  line (fail-safe — a dropped line reads as no-verdict and blocks — but avoid the churn).
+- **Audit.** Append the gate's `run` journal entry with `verdict: SKIP` and a `reason:`
+  field (the `Stop` hook refuses a `SKIP` run entry with no reason). The skip counts as
+  pass for advancement — it is **not** a BLOCK, so it does not increment the rework cap.
+- **Enforcement.** `barrier-gate.sh` and `repo.sh pr` treat an **audited** `acceptance` /
+  `correctness` SKIP (a `SKIP` with a reason on the line) as satisfying the gate, but still
+  **block a reasonless SKIP or a missing verdict** — the reason is what distinguishes an
+  audited skip from a bypass.
+
+> **Security gate + loud surfaces.** The same `--skip --reason` model extends to the
+> **security** gate at `gh pr create` — record it with
+> `pr-security-review/record-verdict.sh --skip --reason "<why>"`; `pr-gate.sh` and
+> `repo.sh pr` honor an audited security SKIP and refuse a reasonless one, exactly like the
+> barrier gates. And a skip is **loud**: `repo.sh pr` adds a "⚠ Skipped reviews" section to
+> the PR body listing each skipped gate + reason (the compensating control — the PR reviewer
+> is the last human check), and `sync-status` surfaces a `Skipped:` tally in `STATUS.md`
+> Pipeline health (skips are excluded from the block-rate denominator). On the raw
+> `gh pr create` path, add the PR-body section by hand.
+
 ## Carrying a verdict forward (a docs-only touch-up)
 
 Amending a slice that **already passed** the barrier with a **provably non-functional**

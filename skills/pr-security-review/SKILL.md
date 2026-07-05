@@ -125,6 +125,25 @@ and the gate honors a recorded verdict over any skip rule.
      was reviewed · the counts/findings — so the record carries all lenses. Then
      create the PR; the gate reads the `PASS` verdict for `HEAD` and allows it.
 
+## Skipping the security review for one run
+
+You may **intentionally skip** the security review for a single run — a spike, or a change
+you judge has no security surface — under the same **"no silent skip"** rule as the barrier
+gates (`next/BARRIER.md`, "Skipping a gate for one run", which also spells out the accepted
+risk). You may self-initiate it (no approver), but the **reason is mandatory** and is
+recorded through the recorder, never hand-written:
+
+```
+bash "$CLAUDE_PROJECT_DIR"/.claude/skills/pr-security-review/record-verdict.sh \
+  --skip --reason "docs-only touch-up, no code path"
+```
+
+This writes a `SKIP <reason>` verdict for `HEAD`. `pr-gate.sh` and `scripts/repo.sh pr`
+honor it and **refuse a reasonless skip**; `repo.sh pr` lists it in the PR body's
+"⚠ Skipped reviews" section so the human reviewing the PR sees that security was skipped
+(the compensating control). On the raw `gh pr create` path, add that section to the PR body
+yourself. Still append a `run` journal entry (`verdict: SKIP`, with the `reason`).
+
 ## Notes
 
 - The verdict lives under `.git/` (per-clone, uncommitted) keyed by commit SHA —
