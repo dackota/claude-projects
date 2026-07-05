@@ -121,23 +121,33 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
   read-only) — an `agent-controls` control.
 
   Then **record the barrier verdict** so the PR gate can enforce it in code — the same
-  pattern the security gate uses. As a **separate write, before** you open the PR (a
-  verdict chained in the same command as `gh pr create` may not have landed when the
-  hook fires — the write-then-act rule), write one line per gate to
-  `"$(git rev-parse --absolute-git-dir)"/barrier-review/"$(git rev-parse HEAD)"`:
+  pattern the security gate uses. **Do not hand-write the file** (`printf 'acceptance
+  PASS' > …`): the orchestrator authoring a gate `PASS` is indistinguishable from a
+  bypass and an auto-mode safety classifier will refuse it (the rationale is in
+  `record-barrier-gate.sh`'s header). Instead pipe **each
+  gate's verbatim output** through `record-barrier-gate.sh <gate>`, which parses that
+  gate's `VERDICT:` line, validates it, and upserts `<gate> <verdict>` into
+  `barrier-review/<HEAD>`. As a **separate step, before** you open the PR (a verdict
+  chained in the same command as `gh pr create` may not have landed when the hook fires
+  — the write-then-act rule); the per-gate calls may run in parallel in one message:
 
   ```
-  acceptance PASS
-  correctness PASS
-  runtime SKIP          # or PASS/BLOCK — recorded, not gated here
-  observability PASS    # omit when the gate didn't run
+  bash "$CLAUDE_PROJECT_DIR"/.claude/skills/next/record-barrier-gate.sh acceptance <<'V'
+  <the implementation-validator's verbatim output (its VERDICT: line)>
+  V
+  bash "$CLAUDE_PROJECT_DIR"/.claude/skills/next/record-barrier-gate.sh correctness <<'V'
+  <the correctness-reviewer's verbatim output>
+  V
+  # runtime only when the diff was runnable; observability only when that gate ran:
+  bash "$CLAUDE_PROJECT_DIR"/.claude/skills/next/record-barrier-gate.sh runtime <<'V'
+  <the runtime-validator's verbatim output — VERDICT: PASS | BLOCK | SKIP>
+  V
   ```
 
-  You write this (the gate agents are read-only) — it is the acceptance/correctness
-  analogue of the `.git/pr-security-review/<sha>` verdict. `barrier-gate.sh` (raw
-  `gh pr create`) and `scripts/repo.sh pr` both require `acceptance PASS` **and**
-  `correctness PASS` for HEAD, so a slice can no longer reach a PR with these gates
-  silently skipped.
+  The gate agents stay read-only — the recorder (not the agent) writes, deriving each
+  line from the agent's own output. `barrier-gate.sh` (raw `gh pr create`) and
+  `scripts/repo.sh pr` both require `acceptance PASS` **and** `correctness PASS` for
+  HEAD, so a slice can no longer reach a PR with these gates silently skipped.
 
   Then flip the task `active → done` and proceed to **Land** — open the PR with
   `scripts/repo.sh pr <task>` (cwd-safe; self-enforces the recorded barrier **and**
