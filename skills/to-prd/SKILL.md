@@ -29,7 +29,7 @@ Check with the user that these modules and seams match their expectations. Check
 3. Write the PRD using the template below, then route it per `project.yaml`:
 
    - **`jira_key` is set** → publish the PRD to the Jira project and apply the `ready-for-agent` label. No further triage needed.
-   - **`jira_key` is empty** → save the PRD as `docs/plans/<slug>-prd.md` with the workspace's lifecycle frontmatter (`status: active`).
+   - **`jira_key` is empty** → save the PRD as `docs/plans/<slug>-prd.md` with lifecycle frontmatter per `docs/README.md` (`status: active`).
    - Use GitHub Issues only when explicitly asked to.
 
 <prd-template>

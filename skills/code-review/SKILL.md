@@ -1,7 +1,8 @@
 ---
 name: code-review
-description: Two-axis review of the working diff between HEAD and a fixed point — Standards (does it follow this repo's conventions plus a code-smell baseline?) and Spec (does it match the originating plan/issue?). Use when the user wants to review a branch or work-in-progress changes, or asks to "review since X".
+description: Two-axis review of the working diff — Standards (repo conventions + code-smell baseline) and Spec (matches the originating plan/issue). Use when the user wants to review a branch or work-in-progress changes, or asks to "review since X".
 origin: claude-projects
+disable-model-invocation: true
 ---
 
 # /code-review — two-axis review of the working diff

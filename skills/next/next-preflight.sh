@@ -27,7 +27,7 @@ for a in tdd-implementer implementation-validator correctness-reviewer runtime-v
 done
 
 # Required companion skills.
-for s in next journal sync-status repo pr-security-review tdd; do
+for s in next journal sync-status repo pr-security-review tdd security-review cloud-infra-security agent-controls; do
   [[ -d "$root/.claude/skills/${s}" ]] || report "skill: ${s}"
 done
 

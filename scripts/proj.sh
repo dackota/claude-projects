@@ -19,6 +19,10 @@
 #                      e.g. tdd,grill-with-docs) to restrict to a subset; bare
 #                      --skills is the same as the default (all skills).
 #   --no-skills        Opt out of bundling skills into the new project.
+#   --full             Also bundle the extras (code-review, codebase-researcher,
+#                      diagnosing-bugs, improve-codebase-architecture, prototype).
+#                      Excluded by default to keep per-session context lean; each
+#                      is also individually installable via --skills.  [scaffold only]
 #   --otel             Opt into observability: bundle the observability skill + otel
 #                      agent and set observability.enabled: true. Off by default — the
 #                      gate is dormant unless a project ships a service.  [scaffold only]
@@ -45,7 +49,8 @@ DRY_RUN=false
 FORCE=false
 PROJECT_NAME=""
 COPY_SKILLS=true   # skills are bundled by default; opt out with --no-skills
-SKILLS_LIST=""  # empty = all bundled skills
+SKILLS_LIST=""  # empty = the default bundle (core skills; extras need --full)
+FULL=false      # --full also bundles the extras in EXTRA_SKILLS
 OTEL=false      # observability skill + otel agent are opt-in — enable with --otel
 BUNDLE_RULES=false # coding rules are NOT bundled by default (global rules already load);
                    # opt in with --bundle-rules for repos used without your global config
@@ -65,6 +70,12 @@ AGENTS_SRC="${SCRIPT_DIR}/../agents"
 # works on any machine — a project used without the user's global config still gets its
 # standards. Keep this copy in sync with the canonical set in claude-config/rules.
 RULES_SRC="${SCRIPT_DIR}/../rules"
+
+# Extras: useful-but-occasional skills excluded from the default bundle so each
+# workspace's per-session context stays lean (every bundled skill's description
+# loads into every session). Bundle them with --full, or name one via --skills.
+# observability is separately gated behind --otel.
+EXTRA_SKILLS="code-review codebase-researcher diagnosing-bugs improve-codebase-architecture prototype"
 
 # ── colours ──────────────────────────────────────────────────────────────────
 GREEN="\033[0;32m"
@@ -215,10 +226,14 @@ post_install_skill() {
 # hook the barrier depends on), `sync-status` (Pipeline health in Learn), and
 # `pr-security-review` (the "independent review before every PR" promise in Land).
 # Without these a `--skills next` install is a legal-looking but silently broken
-# pipeline. `codebase-researcher` is intentionally NOT a dep — it's an optional detour.
+# pipeline. `security-review`/`cloud-infra-security` (read by the security-reviewer
+# agent + pr-gate classifier) and `agent-controls` (read by the barrier) are listed
+# directly on `next` because expand_skill_deps is one-level, not recursive.
+# `codebase-researcher` is intentionally NOT a dep — it's an optional detour.
 skill_deps() {
   case "$1" in
-    next) echo "grill-with-docs to-prd to-issues tdd codebase-design repo journal sync-status pr-security-review" ;;
+    next) echo "grill-with-docs to-prd to-issues tdd codebase-design repo journal sync-status pr-security-review security-review cloud-infra-security agent-controls" ;;
+    pr-security-review) echo "security-review cloud-infra-security" ;;
     *) ;;
   esac
 }
@@ -279,106 +294,59 @@ refresh_managed_claude_md() {
 # Update this when the template changes; new-project is self-contained.
 claude_md_content() {
 cat << 'CLAUDE_MD_EOF'
-# Project Structure
+# Workspace
 
-See `PROJECT.md` for what this project is trying to accomplish. A **project** is
-the body of work and its goal (the *why*); this **workspace** is the directory
-that holds it (the *where*).
+`PROJECT.md` holds the goal (the *why*); this workspace directory holds the work.
+`project.yaml` is the source of truth for repos, tasks, and config.
 
-## Session Start
+## Session start
 
-1. Read `STATUS.md` first — a ~500-token synthesis of current project state. If
-   it is absent, run `/sync-status` to generate it.
-2. **Before anything else, check `PROJECT.md`.** If its Goals section is still the
-   scaffold placeholder (empty, or just the `<!-- … -->` comment), the project has
-   no stated goal yet — do **not** proceed or invent one. Ask the user what the
-   project is trying to accomplish, fill `PROJECT.md` in with their answers (keep
-   the frontmatter), then continue. `/next` treats this as the **Bootstrap** phase.
-3. Run `/next` (bundled by default). It reads workspace state, determines the
-   current lifecycle phase, and routes to the next action — so you never have to
-   recall the `grill-with-docs → to-prd → to-issues → tdd` sequence. Run it any
-   time mid-session to ask "where am I / what's next?".
+1. Read `STATUS.md` — the current-state synthesis (absent → run `/sync-status`).
+2. If `PROJECT.md`'s Goals section is still the scaffold placeholder, the project
+   has no stated goal: ask the user and fill it in — **never invent one**.
+3. Run `/next` — it reads workspace state and routes to the current lifecycle
+   phase. Re-run any time to ask "where am I / what's next?".
 
-## Keeping context lean
+## Map
 
-Prompt caching re-reads the whole conversation prefix every turn, so a session
-that never resets pays for its entire history repeatedly (cache-read is
-cumulative across turns, not a snapshot of current context). Keep the main
-thread short:
+| Path | What |
+|------|------|
+| `STATUS.md` | Read-first synthesis; regenerate with `/sync-status` after a significant change, at a natural pause |
+| `project.yaml` | Repos, tasks (vertical slices — schema: `to-issues` skill), config |
+| `CONTEXT.md` | Domain glossary — use its canonical terms in plans, ADRs, issues, tests, commits |
+| `journal.yaml` | Append-only event log — never edit entries (schema: `journal` skill; manual: `/journal <type> "<summary>"`) |
+| `docs/` | `plans/` · `adr/` · `research/` · `validations/` — conventions in `docs/README.md` |
+| `repos/`, `worktrees/` | Clones + task worktrees, managed **only** via `scripts/repo.sh` (run it bare for the command list) |
 
-- **Start a fresh session at natural boundaries** — after a slice lands / is
-  PR'd, and at the planning→build seam (`/next` already hands off there).
-  `STATUS.md` + `journal.yaml` carry state forward, so the next session needs the
-  artifacts, not this thread's history.
-- **Delegate broad exploration** to a read-only sub-agent (`codebase-researcher`,
-  or a general search agent) and keep only its conclusions + `file:line` pointers
-  in the main thread — don't read many files into the orchestrator to hand-assemble
-  context a sub-agent could gather in its own disposable context.
-- **Don't restate what artifacts already hold.** Gate/build detail lives in
-  `docs/validations/` and `journal.yaml`; link to it rather than re-summarizing it
-  back into the thread.
+Coding standards load automatically (global config, or `.claude/rules/` when
+scaffolded with `--bundle-rules`); language rules apply to the files you touch.
 
-## Files & directories
+## Hard rules
 
-- `project.yaml` — source of truth: repos, tasks, Jira key, config
-- `PROJECT.md` — goals and context (read this for the why)
-- `STATUS.md` — current-state synthesis; READ FIRST every session
-- `CONTEXT.md` — domain glossary: the canonical term for each concept, with
-  synonyms to steer away from. Use its vocabulary in plans, ADRs, issues, tests,
-  and commits. Glossary only — no implementation detail. `/grill-with-docs`
-  maintains it.
-- `journal.yaml` — append-only event log; never rewrite, only append (see below)
-- `docs/plans/` — planning documents (and local PRDs when not using a tracker)
-- `docs/adr/` — architectural decision records (see Documentation rules)
-- `docs/research/`, `docs/validations/` — research, and completion evidence
-- **Coding standards** — general conventions plus language-specific rules (Go, Python, …).
-  Follow them when writing or reviewing code; they load into context automatically (language
-  rules apply to the files you touch). Bundled under `.claude/rules/` when scaffolded with
-  `--bundle-rules`; otherwise they come from your global config.
-- `scripts/` — one-off scripts not belonging to a specific repo
-- `repos/`, `worktrees/` — cloned repos and task worktrees, **managed only via
-  `scripts/repo.sh`** (see below). Both are `.gitignore`-excluded; repos are
-  tracked in `project.yaml`, worktrees derived live — read it to see what exists.
+- **Journal immediately** when a decision lands, a plan is finalized, a task
+  status flips, a blocker appears, research finalizes, a PR opens/merges, or a
+  gate runs.
+- **Read `docs/README.md` before writing any doc** — lifecycle frontmatter is
+  mandatory and `status:` is the currency signal.
+- **Never** run raw `git clone` / `git worktree` / branch ops under `repos/` or
+  `worktrees/` — a hook blocks them; `scripts/repo.sh` wraps them (and `status` /
+  `sync` catch worktree drift).
+- **Write, then act:** PreToolUse gates inspect a command *before* it runs. Never
+  chain a file write with a gated command in one Bash call
+  (`… > verdict && gh pr create`) — the gate can't see the file yet and blocks.
+  Write in one call; run the gated command in the next.
+- The post-build barrier and PR security gate are normative in
+  `.claude/skills/next/BARRIER.md` — point there; don't restate it.
+CLAUDE_MD_EOF
+}
 
-## repos/ & worktrees/ — always via `scripts/repo.sh`
-
-With the `repo` skill installed (default), every repo/worktree operation goes
-through `scripts/repo.sh`; a PreToolUse hook blocks raw `git clone`,
-`git worktree add`, and branch create/switch under `repos/`/`worktrees/`
-(read-only git and `git checkout -- <file>` stay allowed). Run `scripts/repo.sh`
-with no args for the command list, or see the `repo` skill.
-
-Key habits: worktrees drift as their base advances — run `scripts/repo.sh status`
-before relying on one, `sync` to catch it up. When a task depends on another still
-in review, **stack** on that branch (`repo.sh worktree <task> <repo> --onto
-<parent>`, or auto-derived from a single unmerged `blocked_by`) instead of
-waiting; `sync` re-points to the base once the parent merges.
-
-## Independent review
-
-Fresh agents that never saw the build guard each slice at two moments: a **post-build
-barrier** (`/next` runs acceptance + correctness always, runtime for runnable diffs,
-observability for service tasks — one parallel message; any BLOCK loops back to `tdd`
-before the task is `done`, a runtime SKIP counts as pass) and a **security gate** at
-`gh pr create` (infra at any size and code touching a trust-boundary surface are
-reviewed; pure-logic and docs-only diffs skip; `--web`/GitHub UI bypass). The orchestrator writes one
-**validation record** per slice to `docs/validations/<task>.md`, a section per gate.
-Every review agent carries an `agent-controls` **operating contract** and is read-only
-where it reviews.
-
-The normative protocol — which gates run when, verdicts, loop-back, record shape, and
-the PR gate — lives in **one** place: the `next` skill's
-`.claude/skills/next/BARRIER.md`. Don't restate it here or in other skills; point to it.
-
-**PreToolUse gates read the command before it runs — write, then act.** When a
-hook gates an action on a file a *prior* step must produce (e.g. the PR gate reads
-a security verdict under `.git/`), never chain the write and the gated action in
-one Bash call (`… > file && gh pr create …`, or a write piped/`;`-joined ahead of
-the gated command). The hook inspects the command string *before* it executes, so
-the file it needs has not landed yet and the gate blocks. Run the write as its own
-Bash call, let it finish, then run the gated action in the next call.
-
-## Documentation rules
+# ── embedded docs/README.md ──────────────────────────────────────────────────
+# Doc conventions live here (read on demand when writing a doc) rather than in
+# CLAUDE.md (loaded every session) — the single canonical home for the lifecycle
+# frontmatter schema and doc types. Skills reference this file by path.
+docs_readme_content() {
+cat << 'DOCS_README_EOF'
+# docs/ conventions
 
 All artifacts are Markdown with dash-separated file names. Every doc in
 `docs/plans/`, `docs/research/`, and `docs/validations/` MUST carry lifecycle
@@ -402,73 +370,16 @@ task: null                # optional task id from project.yaml
 tracing history. Never move or delete a superseded doc: flip `status: superseded`,
 set `superseded_by`, and add a short block-quote at the top saying when/why.
 
-Doc types:
+## Doc types
 
 | Type | Where | When / must include |
 |------|-------|---------------------|
 | **Plan** | `docs/plans/` | "create a plan", "plan it out". Detail Problem, Solution, Trade-offs, Considerations; break into human-reviewable Tasks. |
 | **ADR** | `docs/adr/0001-slug.md` | A decision that is (1) hard to reverse, (2) surprising without context, (3) a real trade-off. If any bar is missing, skip it — a `decision` journal line suffices. |
 | **Research** | `docs/research/` | "research how X works"; may be referenced by multiple plans. |
-| **Validation** | `docs/validations/` | Every gated slice leaves one — the `/next` orchestrator writes it from the post-build gates' evidence (one record per task, each gate a section: verdict · what · how · evidence like commands run, `path/to/file.ext:34`, test/boot output). It records the **final passing** state; mid-loop BLOCK history stays in `blocker`/`run` journal entries. The `done` journal entry references it. Hand-invoked `/tdd` writes its own at close-out. |
+| **Validation** | `docs/validations/` | One per gated slice — the `/next` orchestrator writes it from the post-build gates' evidence (a section per gate: verdict · what · how · evidence like commands run, `path/to/file.ext:34`, test/boot output). Records the **final passing** state; mid-loop BLOCK history stays in `blocker`/`run` journal entries. The `done` journal entry references it. Hand-invoked `/tdd` writes its own at close-out. |
 | **Script** | `scripts/` | Repeatable or logic-heavy work. Bash preferred, Python OK. |
-
-## journal.yaml
-
-Append-only; never edit existing entries. Manual escape hatch:
-`/journal <type> "<summary>"`. Entry schema:
-
-```yaml
-- date: YYYY-MM-DD
-  type: decision   # decision | plan | started | done | blocker | research | pr | run
-  summary: <one or two sentences>
-  refs: []         # optional paths or external IDs
-  jira: PROJ-142  # optional
-```
-
-Append immediately when: a decision is made/reversed (`decision` — link the ADR
-if one was written) · a plan is finalized/revised (`plan`) · a task status flips
-(`started`/`done`) · a blocker is hit (`blocker`) · research is finalized
-(`research`) · a PR is opened/merged/closed (`pr`) · a `/next` gate finishes
-(`run` — the pipeline audit trail; the `run-check.sh` hook nudges you).
-
-## /sync-status
-
-Regenerates `STATUS.md` wholesale from `PROJECT.md`, `project.yaml`,
-`journal.yaml`, and doc frontmatter/active-doc content. Run it (or Claude runs it
-automatically) when **both** hold: (1) a significant change occurred (plan
-finalized, decision committed, task status flipped, meaningful blocker); and
-(2) a natural pause has arrived (handing back, finishing a work block). Not after
-every doc edit. Its **Pipeline health** section rolls up `run` entries (gate
-block/rework rates) — the loop's "Learn" surface.
-
-## Issue tracker & tasks
-
-Where PRDs and vertical-slice issues go is driven by `project.yaml`:
-
-- **`jira_key` set** → publish to Jira. PRDs get `ready-for-agent`; each issue
-  gets an `afk`/`hitl` label mirroring its type, and `ready-for-agent` is added to
-  AFK issues only — never HITL.
-- **`jira_key` empty** → keep local. PRD → `docs/plans/<slug>-prd.md`;
-  vertical-slice issues → `tasks` in `project.yaml`.
-- Use GitHub Issues only when explicitly asked.
-
-A **task** is a vertical slice in `project.yaml`:
-
-```yaml
-tasks:
-  - id: extract-auth-subchart      # stable kebab-case id (used in blocked_by)
-    title: Extract auth-service subchart
-    type: AFK                      # AFK | HITL
-    status: todo                   # todo | active | done | blocked
-    blocked_by: []                 # list of task ids
-    covers: [R1, R4]               # PRD requirement ids this slice owns (coverage-check.sh verifies every R is owned)
-    plan: docs/plans/chart-split-prd.md
-    jira: null                     # set when mirrored to a Jira issue
-```
-
-Status transitions drive the journal: `todo → active` → `started`,
-`active → done` → `done`, any → `blocked` → `blocker`.
-CLAUDE_MD_EOF
+DOCS_README_EOF
 }
 
 # ── arg parsing ───────────────────────────────────────────────────────────────
@@ -486,6 +397,7 @@ while [[ $# -gt 0 ]]; do
     --dir)             [[ $# -lt 2 ]] && die "--dir requires an argument"; BASE_DIR="$2"; shift 2 ;;
     --jira)            [[ $# -lt 2 ]] && die "--jira requires an argument"; JIRA_KEY="$2"; shift 2 ;;
     --no-skills)       COPY_SKILLS=false; shift ;;
+    --full)            FULL=true; shift ;;
     --otel)            OTEL=true; shift ;;
     --bundle-rules)    BUNDLE_RULES=true; shift ;;
     --skills)
@@ -573,9 +485,16 @@ if [[ "$SUBCOMMAND" == "update-skills" ]]; then
   # picks up harness changes to the template — not just the skills.
   if $DRY_RUN; then
     echo "  [update] CLAUDE.md managed block + .harness-version"
+    [[ -f "$TARGET/docs/README.md" ]] || echo "  [file] docs/README.md (backfill)"
   else
     refresh_managed_claude_md "$TARGET"
     printf 'harness_sha: %s\nstamped: %s\n' "$(harness_sha)" "$TODAY" > "$TARGET/.harness-version"
+    # Backfill doc conventions for pre-docs/README.md workspaces; never overwrite
+    # an existing one (docs/ is user territory once scaffolded).
+    if [[ ! -f "$TARGET/docs/README.md" ]]; then
+      mkdir -p "$TARGET/docs"
+      printf '%s\n' "$(docs_readme_content)" > "$TARGET/docs/README.md"
+    fi
   fi
 
   echo ""
@@ -641,6 +560,9 @@ make_dir "$TARGET/worktrees"
 
 # CLAUDE.md (wrapped in the managed-block markers so update-skills can refresh it)
 write_file "$TARGET/CLAUDE.md" "$(claude_md_document)"
+
+# docs/README.md — doc conventions, read on demand instead of loaded every session
+write_file "$TARGET/docs/README.md" "$(docs_readme_content)"
 
 # .harness-version — stamp the source commit so workspace/harness drift is visible
 write_file "$TARGET/.harness-version" "$(printf 'harness_sha: %s\nstamped: %s' "$(harness_sha)" "$TODAY")"
@@ -741,6 +663,13 @@ if $COPY_SKILLS; then
     # observability is still honored — that path doesn't reach here.)
     if ! $OTEL; then
       SKILLS_TO_COPY="$(printf '%s' "$SKILLS_TO_COPY" | tr ' ' '\n' | grep -vx 'observability' | tr '\n' ' ')"
+    fi
+    # Extras are opt-in via --full (an explicit --skills list that names one is
+    # honored — that path doesn't reach here).
+    if ! $FULL; then
+      for extra in $EXTRA_SKILLS; do
+        SKILLS_TO_COPY="$(printf '%s' "$SKILLS_TO_COPY" | tr ' ' '\n' | grep -vx "$extra" | tr '\n' ' ')"
+      done
     fi
   fi
 

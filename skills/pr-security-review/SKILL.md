@@ -1,6 +1,6 @@
 ---
 name: pr-security-review
-description: Independent security review that gates gh pr create — a fresh security-reviewer (no implementation context) reviews the diff, records a SHA-keyed verdict, and folds findings into the PR body. Use when about to open a PR, or when the PR gate blocks gh pr create.
+description: Independent security review that gates gh pr create — a fresh reviewer with no implementation context reviews the diff. Use when about to open a PR, or when the PR gate blocks gh pr create.
 origin: claude-projects
 agents:
   - security-reviewer

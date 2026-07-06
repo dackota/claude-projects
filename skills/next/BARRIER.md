@@ -115,7 +115,7 @@ Treat these gates as one barrier — the slice advances only if **all** PASS; a 
 **SKIP** counts as pass, and the observability gate counts only when it ran:
 
 - **All PASS** → **write the validation record** to
-  `docs/validations/<task-id>-<slug>.md` (workspace lifecycle frontmatter; one section
+  `docs/validations/<task-id>-<slug>.md` (lifecycle frontmatter per `docs/README.md`; one section
   per gate — verdict · what it validated · how · evidence — built from what each gate
   returned; record the *passing* state). You write it, not the review agents (they are
   read-only) — an `agent-controls` control.

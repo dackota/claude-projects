@@ -1,6 +1,6 @@
 ---
 name: sync-status
-description: Regenerate STATUS.md for a claude-projects workspace from its authoritative inputs. Use when a significant change has landed (plan/decision/task-status/blocker) AND you've reached a natural pause (handing back, finishing a work block) — the conjunction is deliberate.
+description: Regenerate STATUS.md for a claude-projects workspace. Use when a significant change has landed (plan/decision/task-status/blocker) AND you've reached a natural pause — the conjunction is deliberate.
 origin: claude-projects
 ---
 

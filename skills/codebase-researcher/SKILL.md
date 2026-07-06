@@ -1,6 +1,6 @@
 ---
 name: codebase-researcher
-description: Read-only codebase mapper. Trace execution paths, map architecture layers, and surface dependencies and risks for a subsystem or feature area, then capture the findings as a research doc. Use to understand existing code before deciding how to change it, or when a grilling session hits a deep unknown worth researching.
+description: Read-only codebase mapper that traces execution paths, maps architecture layers, and surfaces dependencies and risks. Use when you need to understand existing code before changing it, or a design session hits a deep unknown worth researching.
 origin: claude-projects
 ---
 
@@ -36,8 +36,8 @@ documented decision in `docs/adr/`.
 
 ## Output
 
-Write a research doc to `docs/research/<topic>.md` with the workspace's lifecycle
-frontmatter (`status: active`). Structure it around the sections above, lead with
+Write a research doc to `docs/research/<topic>.md` with lifecycle frontmatter per
+`docs/README.md` (`status: active`). Structure it around the sections above, lead with
 a short summary of what the area does and how, and end with the open questions or
 risks a plan must address. After finalizing it, record a `research` entry in
 `journal.yaml` (or via `/journal research "<summary>"`).

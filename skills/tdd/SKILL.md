@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development with red-green-refactor loop. Never requires interaction (the design was settled in grilling / to-prd / to-issues). Runs two ways by caller — hand-invoked, the main agent (Opus) runs the loop inline for an ad-hoc request; via /next, the Sonnet tdd-implementer sub-agent builds the slice autonomously. Use when building a slice from its acceptance criteria, or for an ad-hoc test-first request.
+description: Non-interactive test-driven red-green loop that builds a slice from its acceptance criteria. Use when building a slice from a plan, or for an ad-hoc test-first implementation request.
 origin: claude-projects
 agents:
   - tdd-implementer
@@ -176,7 +176,7 @@ close-out check.
 Then:
 
 - Flip the `project.yaml` task `status` to `done` — the journal's `done` signal (skip for an ad-hoc request with no task).
-- Write the **validation record** to `docs/validations/<task>.md` (workspace lifecycle frontmatter) with the evidence — commands run, `path:line`, test output — and reference it from the `done` journal entry. In inline mode you are the reviewer, so this is your own close-out evidence; in `/next` subagent mode the orchestrator writes it from the gates' output instead (see below).
+- Write the **validation record** to `docs/validations/<task>.md` (lifecycle frontmatter per `docs/README.md`) with the evidence — commands run, `path:line`, test output — and reference it from the `done` journal entry. In inline mode you are the reviewer, so this is your own close-out evidence; in `/next` subagent mode the orchestrator writes it from the gates' output instead (see below).
 
 In subagent mode (`/next`), an **independent post-build barrier** runs immediately
 after this loop and gates the task before it is marked done; a `BLOCK` from any gate

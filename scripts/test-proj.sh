@@ -61,17 +61,26 @@ assert "project.yaml has validation block"    "$(grep -q '^validation:' "$TARGET
 assert ".gitignore excludes repos/"           "$(grep -q 'repos/' "$TARGET/.gitignore" && echo true || echo false)"
 assert ".gitignore excludes worktrees/"       "$(grep -q 'worktrees/' "$TARGET/.gitignore" && echo true || echo false)"
 assert "PROJECT.md has frontmatter title"     "$(grep -q "title: ${PROJECT_NAME}" "$TARGET/PROJECT.md" && echo true || echo false)"
-assert "CLAUDE.md contains Project Structure" "$(grep -q '# Project Structure' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md references docs/adr/"       "$(grep -q 'docs/adr/' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md nudges PROJECT.md bootstrap" "$(grep -q 'Before anything else, check .PROJECT.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md drops docs/decisions"       "$(! grep -q 'docs/decisions' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md: every-gated-slice validation" "$(grep -q 'Every gated slice' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md: supersession type retired"    "$(! grep -q 'supersession' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md is the lean router"         "$(grep -q '# Workspace' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md nudges PROJECT.md bootstrap" "$(grep -q 'never invent one' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md routes to /next"            "$(grep -q '/next' "$TARGET/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: points to canonical BARRIER.md" "$(grep -q 'BARRIER.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md: write-then-act gate rule"  "$(grep -q 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md: surface-based security skip" "$(grep -q 'trust-boundary' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md: size-based skip retired"   "$(! grep -q '25 lines' "$TARGET/CLAUDE.md" && echo true || echo false)"
-assert "CLAUDE.md: session-hygiene guidance"  "$(grep -q 'Keeping context lean' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: write-then-act gate rule"  "$(grep -qi 'write, then act' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: points to docs/README.md"  "$(grep -q 'docs/README.md' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: task schema deferred to skill" "$(grep -q 'to-issues' "$TARGET/CLAUDE.md" && echo true || echo false)"
+# Size guard: CLAUDE.md loads every session — bloat is a test failure, not a rediscovery.
+assert "CLAUDE.md stays under 3KB"            "$([[ $(wc -c < "$TARGET/CLAUDE.md") -le 3072 ]] && echo true || echo false)"
+# docs/README.md carries the doc conventions cut from CLAUDE.md (read on demand).
+assert "docs/README.md scaffolded"            "$([[ -f $TARGET/docs/README.md ]] && echo true || echo false)"
+assert "docs/README.md: lifecycle frontmatter" "$(grep -q 'superseded_by' "$TARGET/docs/README.md" && echo true || echo false)"
+assert "docs/README.md: doc types table"      "$(grep -q 'One per gated slice' "$TARGET/docs/README.md" && echo true || echo false)"
+# Skill descriptions load every session too — cap them (value after 'description: ').
+DESC_MAX=$(sed -n 's/^description: //p' "$TARGET"/.claude/skills/*/SKILL.md | awk '{print length}' | sort -n | tail -1)
+assert "skill descriptions stay <= 250 chars" "$([[ ${DESC_MAX:-0} -le 250 ]] && echo true || echo false)"
+# The surface-based security-skip rule lives in the pr-security-review skill, not CLAUDE.md.
+assert "security skip rule with pr-security-review" "$(grep -q 'trust-boundary' "$TARGET/.claude/skills/pr-security-review/SKILL.md" && echo true || echo false)"
+# Session-hygiene guidance moved from CLAUDE.md into the /next router.
+assert "next: session-hygiene guidance"       "$(grep -q 'Session hygiene' "$TARGET/.claude/skills/next/SKILL.md" && echo true || echo false)"
 assert "CONTEXT.md has Language heading"      "$(grep -q '## Language' "$TARGET/CONTEXT.md" && echo true || echo false)"
 assert "STATUS.md exists"                     "$([[ -f $TARGET/STATUS.md ]] && echo true || echo false)"
 assert "STATUS.md has last_synced: null"      "$(grep -q 'last_synced: null' "$TARGET/STATUS.md" && echo true || echo false)"
@@ -82,11 +91,19 @@ assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.
 assert "default: observability NOT bundled (opt-in)" "$([[ ! -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
 assert "default: no otel agent (opt-in)"      "$([[ ! -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
 assert "default: codebase-design bundled"     "$([[ -d $TARGET/.claude/skills/codebase-design ]] && echo true || echo false)"
-assert "default: code-review bundled"         "$([[ -d $TARGET/.claude/skills/code-review ]] && echo true || echo false)"
-assert "default: diagnosing-bugs bundled"     "$([[ -d $TARGET/.claude/skills/diagnosing-bugs ]] && echo true || echo false)"
-assert "default: diagnosing-bugs hitl tmpl"   "$([[ -f $TARGET/.claude/skills/diagnosing-bugs/scripts/hitl-loop.template.sh ]] && echo true || echo false)"
-assert "default: prototype bundled"           "$([[ -d $TARGET/.claude/skills/prototype ]] && echo true || echo false)"
-assert "default: improve-codebase-arch bundled" "$([[ -d $TARGET/.claude/skills/improve-codebase-architecture ]] && echo true || echo false)"
+# Extras are opt-in via --full — excluded from the default bundle to keep context lean.
+assert "default: code-review NOT bundled"     "$([[ ! -d $TARGET/.claude/skills/code-review ]] && echo true || echo false)"
+assert "default: diagnosing-bugs NOT bundled" "$([[ ! -d $TARGET/.claude/skills/diagnosing-bugs ]] && echo true || echo false)"
+assert "default: prototype NOT bundled"       "$([[ ! -d $TARGET/.claude/skills/prototype ]] && echo true || echo false)"
+assert "default: improve-codebase-arch NOT bundled" "$([[ ! -d $TARGET/.claude/skills/improve-codebase-architecture ]] && echo true || echo false)"
+assert "default: codebase-researcher NOT bundled" "$([[ ! -d $TARGET/.claude/skills/codebase-researcher ]] && echo true || echo false)"
+# Gate-load-bearing skills stay in the default core (agents/hooks read their files).
+assert "default: security-review bundled"     "$([[ -d $TARGET/.claude/skills/security-review ]] && echo true || echo false)"
+assert "default: cloud-infra-security bundled" "$([[ -d $TARGET/.claude/skills/cloud-infra-security ]] && echo true || echo false)"
+assert "default: agent-controls bundled"      "$([[ -d $TARGET/.claude/skills/agent-controls ]] && echo true || echo false)"
+# Exact core count: adding a skill to skills/ forces a conscious core-vs-extra call here.
+CORE_COUNT=$(ls -1 "$TARGET/.claude/skills" | wc -l | tr -d ' ')
+assert "default bundle is exactly 13 skills"  "$([[ "$CORE_COUNT" == "13" ]] && echo true || echo false)"
 assert "default: tdd baseline is unconditional" "$(grep -q 'Observable by default (baseline' "$TARGET/.claude/agents/tdd-implementer.md" && echo true || echo false)"
 assert "default: barrier-gate hook present"    "$([[ -f $TARGET/.claude/skills/journal/hooks/barrier-gate.sh ]] && echo true || echo false)"
 assert "default: barrier-gate hook wired"      "$(grep -q 'barrier-gate.sh' "$TARGET/.claude/settings.json" && echo true || echo false)"
@@ -119,6 +136,21 @@ assert "--no-skills: workspace still created"  "$([[ -f $NS/CLAUDE.md ]] && echo
 assert "--no-skills: skills not installed"     "$([[ ! -d $NS/.claude/skills/repo ]] && echo true || echo false)"
 assert "--no-skills: no observability skill"   "$([[ ! -d $NS/.claude/skills/observability ]] && echo true || echo false)"
 assert "--no-skills: no otel agent"            "$([[ ! -f $NS/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+
+# ── --full opts into the extras bundle ────────────────────────────────────────
+FL="${TMPDIR_BASE}/full-test"
+bash "$PROJ" "full-test" --dir "$TMPDIR_BASE" --full >/dev/null 2>&1
+assert "--full: code-review bundled"           "$([[ -d $FL/.claude/skills/code-review ]] && echo true || echo false)"
+assert "--full: codebase-researcher bundled"   "$([[ -d $FL/.claude/skills/codebase-researcher ]] && echo true || echo false)"
+assert "--full: diagnosing-bugs bundled"       "$([[ -d $FL/.claude/skills/diagnosing-bugs ]] && echo true || echo false)"
+assert "--full: diagnosing-bugs hitl tmpl"     "$([[ -f $FL/.claude/skills/diagnosing-bugs/scripts/hitl-loop.template.sh ]] && echo true || echo false)"
+assert "--full: prototype bundled"             "$([[ -d $FL/.claude/skills/prototype ]] && echo true || echo false)"
+assert "--full: improve-codebase-arch bundled" "$([[ -d $FL/.claude/skills/improve-codebase-architecture ]] && echo true || echo false)"
+assert "--full: observability still opt-in"    "$([[ ! -d $FL/.claude/skills/observability ]] && echo true || echo false)"
+# Extras stay individually installable by name (--skills honors an explicit list).
+XP="${TMPDIR_BASE}/extras-pick-test"
+bash "$PROJ" "extras-pick-test" --dir "$TMPDIR_BASE" --skills prototype >/dev/null 2>&1
+assert "--skills prototype: extra installed"   "$([[ -d $XP/.claude/skills/prototype ]] && echo true || echo false)"
 
 # ── --otel opts into observability (skill + otel agent + enabled flag) ─────────
 OT2="${TMPDIR_BASE}/otel-test"
@@ -999,6 +1031,11 @@ assert "next: pulls journal companion"              "$([[ -d $NT/.claude/skills/
 assert "next: pulls repo companion"                 "$([[ -d $NT/.claude/skills/repo ]] && echo true || echo false)"
 assert "next: pulls sync-status companion"          "$([[ -d $NT/.claude/skills/sync-status ]] && echo true || echo false)"
 assert "next: pulls pr-security-review companion"   "$([[ -d $NT/.claude/skills/pr-security-review ]] && echo true || echo false)"
+# Gate-load-bearing companions: the security-reviewer agent + pr-gate classifier read
+# security-review/cloud-infra-security files; the barrier reads agent-controls.
+assert "next: pulls security-review companion"      "$([[ -d $NT/.claude/skills/security-review ]] && echo true || echo false)"
+assert "next: pulls cloud-infra-security companion" "$([[ -d $NT/.claude/skills/cloud-infra-security ]] && echo true || echo false)"
+assert "next: pulls agent-controls companion"       "$([[ -d $NT/.claude/skills/agent-controls ]] && echo true || echo false)"
 assert "next: repo.sh script installed"             "$([[ -f $NT/scripts/repo.sh ]] && echo true || echo false)"
 assert "next: security-reviewer agent installed"    "$([[ -f $NT/.claude/agents/security-reviewer.md ]] && echo true || echo false)"
 NX_SETTINGS="$NT/.claude/settings.json"
@@ -1198,7 +1235,7 @@ assert "coverage: check script installed"            "$([[ -f $COV ]] && echo tr
 assert "to-prd: PRD template has Requirements"       "$(grep -q '## Requirements' "$RT/.claude/skills/to-prd/SKILL.md" && echo true || echo false)"
 assert "to-issues: slices persist covers"            "$(grep -q 'covers:' "$RT/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
 assert "to-issues: runs coverage-check"              "$(grep -q 'coverage-check' "$RT/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
-assert "CLAUDE.md: task schema has covers"           "$(grep -q 'covers:' "$TARGET/CLAUDE.md" && echo true || echo false)"
+assert "to-issues skill: task schema has covers"     "$(grep -q 'covers:' "$TARGET/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
 
 if command -v yq >/dev/null 2>&1; then
   covcheck() { local rc=0; bash "$COV" "$1" "$2" >/dev/null 2>&1 || rc=$?; echo "$rc"; }
