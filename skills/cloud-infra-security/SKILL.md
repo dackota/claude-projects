@@ -1,6 +1,6 @@
 ---
 name: cloud-infra-security
-description: Security checklist for cloud infrastructure and CI/CD — IAM, secrets, network, logging, pipeline, CDN/WAF, backups. Use when deploying to a cloud platform, writing IaC (Terraform/CloudFormation), configuring IAM, setting up a CI/CD pipeline, or managing cloud secrets.
+description: Security checklist for cloud infrastructure and CI/CD — IAM, secrets, network, logging, CDN/WAF, backups. Use when deploying to cloud, writing IaC, configuring IAM, setting up a CI/CD pipeline, or managing cloud secrets.
 origin: ECC
 ---
 

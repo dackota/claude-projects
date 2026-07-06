@@ -42,7 +42,7 @@ Neither → normal Land (just open the PR); do not run release-verify.
      **Fall back to HITL:** hand the derived checklist to the user to run manually and
      record their result. A SKIP never stalls the release.
 4. **Record it.** Write the verdict + evidence to a release **validation record**
-   (`docs/validations/release-<tag-or-date>.md`, workspace lifecycle frontmatter) and
+   (`docs/validations/release-<tag-or-date>.md`, lifecycle frontmatter per `docs/README.md`) and
    append a `run` journal entry (`agent: runtime-validator`, the release ref as the
    task) so Status synthesis **Pipeline health** rolls it up. This is the durable
    answer to "how was this release verified?"

@@ -1,7 +1,8 @@
 ---
 name: prototype
-description: Build a throwaway prototype to answer a design question — "does this logic/state model feel right?" or "what should this look like?". Use during design, before committing to a build, to sanity-check a state model or explore what a UI should be.
+description: Build a throwaway prototype to answer a design question before committing to a build. Use during design to sanity-check a logic/state model or explore what a UI should look like.
 origin: claude-projects
+disable-model-invocation: true
 ---
 
 # Prototype

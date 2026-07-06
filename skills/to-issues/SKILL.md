@@ -1,6 +1,6 @@
 ---
 name: to-issues
-description: Break a plan, spec, or PRD into independently-grabbable tracer-bullet vertical slices, published as Jira issues or local project.yaml tasks (routed by project.yaml jira_key). Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.
+description: Break a plan, spec, or PRD into tracer-bullet vertical-slice issues, published to Jira or local project.yaml tasks. Use when the user wants to convert a plan into issues, create implementation tickets, or break down work.
 origin: claude-projects
 ---
 

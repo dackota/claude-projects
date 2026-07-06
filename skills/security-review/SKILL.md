@@ -1,6 +1,6 @@
 ---
 name: security-review
-description: Security checklist for application code — secrets, input validation, injection, authn/z, XSS, CSRF, rate limiting, data exposure, dependencies. Use when adding auth, handling user input or file uploads, touching secrets, creating API endpoints, or shipping payment/sensitive features.
+description: Security checklist for application code — secrets, input validation, injection, authn/z, XSS, CSRF, rate limiting. Use when adding auth, handling user input or uploads, touching secrets, creating API endpoints, or shipping sensitive features.
 origin: ECC
 ---
 

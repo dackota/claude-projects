@@ -1,6 +1,6 @@
 ---
 name: repo
-description: Manage cloned repos and git worktrees in a claude-projects workspace through scripts/repo.sh. Use whenever you need to clone a repo, start work on a task, sync a worktree with its base branch, check for drift, or remove a worktree. Raw git clone / worktree add / branch create/switch under repos/ and worktrees/ are blocked by a guard hook — route them through repo.sh.
+description: Manage cloned repos and git worktrees via scripts/repo.sh. Use when cloning a repo, starting task work, syncing a worktree, checking drift, or removing a worktree — raw git clone/worktree/branch ops under repos/ and worktrees/ are hook-blocked.
 origin: claude-projects
 ---
 

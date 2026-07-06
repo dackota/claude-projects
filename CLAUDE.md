@@ -8,7 +8,7 @@ This is a **bootstrap tool repo** — not a project workspace. It provides the `
 |------|---------|
 | `scripts/proj.sh` | CLI that scaffolds new project workspaces |
 | `scripts/test-proj.sh` | Smoke tests for `proj.sh` |
-| `skills/` | Skills bundled with this repo (bundled into new projects by default; `--no-skills` to opt out; `observability` is opt-in via `--otel`) |
+| `skills/` | Skills bundled with this repo. The **core** (13) is bundled into new projects by default; the **extras** (`code-review`, `codebase-researcher`, `diagnosing-bugs`, `improve-codebase-architecture`, `prototype` — listed in `EXTRA_SKILLS` in `proj.sh`) are opt-in via `--full`; `observability` is opt-in via `--otel`; `--no-skills` opts out entirely |
 | `agents/` | Agent definitions a skill can pull in via its `agents:` frontmatter |
 | `README.md` | User-facing documentation |
 
@@ -40,7 +40,7 @@ Bundled skills:
 
 ## Working on this repo
 
-- **Adding a skill**: create `skills/<name>/SKILL.md` (+ any supporting `.md` files). No other changes needed — `proj` bundles any skill in `skills/` by default (and `--skills <name>` picks it up by name).
+- **Adding a skill**: create `skills/<name>/SKILL.md` (+ any supporting `.md` files). `proj` bundles any skill in `skills/` into the default core unless you add it to `EXTRA_SKILLS` in `scripts/proj.sh` (then it's `--full`/`--skills <name>` opt-in) — make that core-vs-extra call consciously; `test-proj.sh` pins the core count. Keep the frontmatter `description:` ≤ 250 chars (test-enforced) — it loads into every session of every workspace.
 - **Hook-bearing skills** (`journal`, `sync-status`, `repo`, `pr-security-review`) are special-cased in `wire_skill_hooks()` / `post_install_skill()` in `scripts/proj.sh`, which idempotently merge their hooks into the workspace's `.claude/settings.json` (and, for `repo`, copy `repo.sh` out to `scripts/`). Wire a new hook-bearing skill there.
 - **Agent-bearing skills**: a skill declares the agents it needs via an `agents:` list in its `SKILL.md` frontmatter. `install_skill_agents()` reads that with `yq` and copies the named `agents/<name>.md` into the workspace's `.claude/agents/` (auto-discovered, no wiring). Add new agents under `agents/`.
 - **Orchestrator companions**: if a skill is a hard dependency of `/next` (or another orchestrator) — e.g. `tdd` now needs `codebase-design` for its design vocabulary — add it to `skill_deps()` in `scripts/proj.sh` so a `--skills next` subset install pulls it too (and add a `next: companion …` assertion in `test-proj.sh`).
@@ -52,7 +52,8 @@ Bundled skills:
 ## proj CLI quick reference
 
 ```
-proj <name>                     # scaffold + bundle all skills (default)
+proj <name>                     # scaffold + bundle the core skills (default)
+proj <name> --full              # also bundle the extras (EXTRA_SKILLS in proj.sh)
 proj <name> --no-skills         # scaffold without bundling skills
 proj <name> --otel              # opt into observability (bundle skill+agent, enable gate)
 proj <name> --skills tdd,grill-with-docs  # scaffold + bundle a specific subset
