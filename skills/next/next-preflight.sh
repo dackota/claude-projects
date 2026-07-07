@@ -21,13 +21,15 @@ report() { echo "  [MISSING] $1" >&2; missing=$((missing + 1)); }
 # Required scripts (worktree/repo ops).
 [[ -f "$root/scripts/repo.sh" ]] || report "scripts/repo.sh (repo/worktree operations)"
 
-# Required gate + build agents.
-for a in tdd-implementer implementation-validator correctness-reviewer runtime-validator security-reviewer integration-reviewer; do
+# Required gate + build agents. otel-observability-engineer gates service tasks in the
+# barrier; to-issues can enable observability on any workspace, so it must be present.
+for a in tdd-implementer implementation-validator correctness-reviewer runtime-validator security-reviewer integration-reviewer otel-observability-engineer; do
   [[ -f "$root/.claude/agents/${a}.md" ]] || report "agent: ${a}"
 done
 
-# Required companion skills.
-for s in next journal sync-status repo pr-security-review tdd security-review cloud-infra-security agent-controls; do
+# Required companion skills. observability is dormant-by-flag but must be installed so
+# to-issues' backstop and the barrier's otel gate never point at a missing skill.
+for s in next journal sync-status repo pr-security-review tdd security-review cloud-infra-security agent-controls observability; do
   [[ -d "$root/.claude/skills/${s}" ]] || report "skill: ${s}"
 done
 

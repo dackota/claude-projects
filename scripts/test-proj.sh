@@ -57,6 +57,7 @@ assert "project.yaml has repos list"          "$(grep -q 'repos: \[\]' "$TARGET/
 assert "project.yaml has tasks list"          "$(grep -q 'tasks: \[\]' "$TARGET/project.yaml" && echo true || echo false)"
 assert "project.yaml has observability block" "$(grep -q '^observability:' "$TARGET/project.yaml" && echo true || echo false)"
 assert "project.yaml observability disabled"  "$(grep -q 'enabled: false' "$TARGET/project.yaml" && echo true || echo false)"
+assert "project.yaml observability has waived field" "$(grep -q 'waived:' "$TARGET/project.yaml" && echo true || echo false)"
 assert "project.yaml has validation block"    "$(grep -q '^validation:' "$TARGET/project.yaml" && echo true || echo false)"
 assert ".gitignore excludes repos/"           "$(grep -q 'repos/' "$TARGET/.gitignore" && echo true || echo false)"
 assert ".gitignore excludes worktrees/"       "$(grep -q 'worktrees/' "$TARGET/.gitignore" && echo true || echo false)"
@@ -88,8 +89,11 @@ assert "journal.yaml exists"                  "$([[ -f $TARGET/journal.yaml ]] &
 assert "journal.yaml is an empty YAML list"   "$(grep -qx '\[\]' "$TARGET/journal.yaml" && echo true || echo false)"
 assert "default: skills bundled (repo)"       "$([[ -d $TARGET/.claude/skills/repo ]] && echo true || echo false)"
 assert "default: hooks wired (settings.json)" "$([[ -f $TARGET/.claude/settings.json ]] && echo true || echo false)"
-assert "default: observability NOT bundled (opt-in)" "$([[ ! -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
-assert "default: no otel agent (opt-in)"      "$([[ ! -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+# Observability is ALWAYS bundled (dormant unless project.yaml enables it): the flag can
+# flip on mid-project, so the skill + otel agent must already be present or to-issues/next
+# would reference missing files. --otel only pre-sets enabled: true (see below).
+assert "default: observability bundled (always, dormant)" "$([[ -d $TARGET/.claude/skills/observability ]] && echo true || echo false)"
+assert "default: otel agent present (always)"  "$([[ -f $TARGET/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
 assert "default: codebase-design bundled"     "$([[ -d $TARGET/.claude/skills/codebase-design ]] && echo true || echo false)"
 # Extras are opt-in via --full — excluded from the default bundle to keep context lean.
 assert "default: code-review NOT bundled"     "$([[ ! -d $TARGET/.claude/skills/code-review ]] && echo true || echo false)"
@@ -103,8 +107,15 @@ assert "default: cloud-infra-security bundled" "$([[ -d $TARGET/.claude/skills/c
 assert "default: agent-controls bundled"      "$([[ -d $TARGET/.claude/skills/agent-controls ]] && echo true || echo false)"
 # Exact core count: adding a skill to skills/ forces a conscious core-vs-extra call here.
 CORE_COUNT=$(ls -1 "$TARGET/.claude/skills" | wc -l | tr -d ' ')
-assert "default bundle is exactly 13 skills"  "$([[ "$CORE_COUNT" == "13" ]] && echo true || echo false)"
+assert "default bundle is exactly 14 skills"  "$([[ "$CORE_COUNT" == "14" ]] && echo true || echo false)"
 assert "default: tdd baseline is unconditional" "$(grep -q 'Observable by default (baseline' "$TARGET/.claude/agents/tdd-implementer.md" && echo true || echo false)"
+# to-issues carries the flag-independent observability backstop: it detects a request-serving
+# slice even when the flag is off, and reads the waived state so a recorded decline isn't re-asked.
+assert "default: to-issues has observability backstop" "$(grep -qi 'backstop' "$TARGET/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
+assert "default: to-issues reads observability waived"  "$(grep -q 'waived' "$TARGET/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
+# The IaC/Helm/Terraform/CI carve-out is the key false-positive guard — pin it so a future
+# edit can't silently narrow the trigger into nagging non-service (helm/tf/ci) projects.
+assert "default: to-issues excludes IaC from obs trigger" "$(grep -qi 'Terraform' "$TARGET/.claude/skills/to-issues/SKILL.md" && grep -qi 'Helm' "$TARGET/.claude/skills/to-issues/SKILL.md" && echo true || echo false)"
 assert "default: barrier-gate hook present"    "$([[ -f $TARGET/.claude/skills/journal/hooks/barrier-gate.sh ]] && echo true || echo false)"
 assert "default: barrier-gate hook wired"      "$(grep -q 'barrier-gate.sh' "$TARGET/.claude/settings.json" && echo true || echo false)"
 assert "default: preflight checks barrier-gate" "$(grep -q 'barrier-gate' "$TARGET/.claude/skills/next/next-preflight.sh" && echo true || echo false)"
@@ -146,13 +157,15 @@ assert "--full: diagnosing-bugs bundled"       "$([[ -d $FL/.claude/skills/diagn
 assert "--full: diagnosing-bugs hitl tmpl"     "$([[ -f $FL/.claude/skills/diagnosing-bugs/scripts/hitl-loop.template.sh ]] && echo true || echo false)"
 assert "--full: prototype bundled"             "$([[ -d $FL/.claude/skills/prototype ]] && echo true || echo false)"
 assert "--full: improve-codebase-arch bundled" "$([[ -d $FL/.claude/skills/improve-codebase-architecture ]] && echo true || echo false)"
-assert "--full: observability still opt-in"    "$([[ ! -d $FL/.claude/skills/observability ]] && echo true || echo false)"
+assert "--full: observability bundled (always)" "$([[ -d $FL/.claude/skills/observability ]] && echo true || echo false)"
 # Extras stay individually installable by name (--skills honors an explicit list).
 XP="${TMPDIR_BASE}/extras-pick-test"
 bash "$PROJ" "extras-pick-test" --dir "$TMPDIR_BASE" --skills prototype >/dev/null 2>&1
 assert "--skills prototype: extra installed"   "$([[ -d $XP/.claude/skills/prototype ]] && echo true || echo false)"
 
-# ── --otel opts into observability (skill + otel agent + enabled flag) ─────────
+# ── --otel pre-sets observability.enabled: true (machinery is always bundled) ──
+# The skill + agent ship by default now; --otel's only job is to flip the flag on at
+# scaffold for a project already known to be a service (the differentiator vs default).
 OT2="${TMPDIR_BASE}/otel-test"
 bash "$PROJ" "otel-test" --dir "$TMPDIR_BASE" --otel >/dev/null 2>&1
 assert "--otel: observability skill bundled"   "$([[ -d $OT2/.claude/skills/observability ]] && echo true || echo false)"
@@ -1048,8 +1061,14 @@ preflight() { local rc=0; CLAUDE_PROJECT_DIR="$1" bash "$NT/.claude/skills/next/
 assert "next: preflight passes on full install"     "$([[ "$(preflight "$NT")" == "0" ]] && echo true || echo false)"
 NX_EMPTY="${TMPDIR_BASE}/nx-empty"; mkdir -p "$NX_EMPTY"
 assert "next: preflight fails on empty workspace"   "$([[ "$(preflight "$NX_EMPTY")" == "1" ]] && echo true || echo false)"
-# observability is NOT a companion of next — it is service-scoped, not part of the flow.
-assert "next: does NOT pull observability"          "$([[ ! -d $NT/.claude/skills/observability ]] && echo true || echo false)"
+# observability IS a companion of next: to-issues (a next dep) runs a flag-independent
+# backstop that can enable it, and the barrier spawns otel-observability-engineer.
+assert "next: pulls observability companion"        "$([[ -d $NT/.claude/skills/observability ]] && echo true || echo false)"
+assert "next: pulls otel-observability-engineer"    "$([[ -f $NT/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+# preflight must fail if the observability companion/agent is missing (degraded install).
+rm -rf "$NT/.claude/skills/observability" "$NT/.claude/agents/otel-observability-engineer.md"
+assert "next: preflight fails without observability" "$([[ "$(preflight "$NT")" == "1" ]] && echo true || echo false)"
+bash "$PROJ" update-skills --dir "$NT" >/dev/null 2>&1  # restore for downstream tests
 
 # ── observability skill: install + agent wiring ───────────────────────────────
 OT="${TMPDIR_BASE}/obs-test"
@@ -1220,6 +1239,18 @@ bash "$PROJ" update-skills --dir "$RT" >/dev/null 2>&1
 assert "update-skills: refreshes managed block"      "$(! grep -qF 'STALE RETIRED RULE LINE' "$RT/CLAUDE.md" && echo true || echo false)"
 assert "update-skills: preserves content outside"    "$(grep -qF 'USER NOTE: keep me' "$RT/CLAUDE.md" && echo true || echo false)"
 assert "update-skills: re-stamps .harness-version"   "$(grep -qE '^harness_sha:' "$RT/.harness-version" && echo true || echo false)"
+
+# A6: a full update-skills backfills the now-always-bundled observability skill (+ otel
+# agent) for a pre-change workspace missing it, so the flag can flip without a missing skill.
+rm -rf "$RT/.claude/skills/observability" "$RT/.claude/agents/otel-observability-engineer.md"
+bash "$PROJ" update-skills --dir "$RT" >/dev/null 2>&1
+assert "update-skills: backfills observability skill" "$([[ -d $RT/.claude/skills/observability ]] && echo true || echo false)"
+assert "update-skills: backfills otel agent"          "$([[ -f $RT/.claude/agents/otel-observability-engineer.md ]] && echo true || echo false)"
+# But an explicit --skills subset is honored verbatim — no surprise observability backfill.
+rm -rf "$RT/.claude/skills/observability" "$RT/.claude/agents/otel-observability-engineer.md"
+bash "$PROJ" update-skills --dir "$RT" --skills repo >/dev/null 2>&1
+assert "update-skills --skills subset: no obs backfill" "$([[ ! -d $RT/.claude/skills/observability ]] && echo true || echo false)"
+bash "$PROJ" update-skills --dir "$RT" >/dev/null 2>&1  # restore for downstream tests
 
 # ADR-0004: declarative toolchain — project.yaml declares format/lint/test commands,
 # and the runner + spot-verify prefer them (declared-then-inferred, not hardcoded).

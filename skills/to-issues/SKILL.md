@@ -32,15 +32,30 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 - **Name the seam** each slice's tests attach at (from the PRD's testing decisions). `tdd` tests only at a named seam, so a slice with no named seam can't be built AFK — resolve the seam before publishing, not during the build.
 </vertical-slice-rules>
 
-**Observability (service projects only).** If `project.yaml` has
-`observability.enabled: true`, then for any slice that adds a **request-serving
-path** (HTTP/gRPC handler, message consumer, background/cron job), fold the
-observability baseline into that slice's **acceptance criteria** — read
-`.claude/skills/observability/standard.md` and add concrete criteria: RED metrics
-(rate/errors/duration) on the new path, structured JSON logs with `trace_id`/`span_id`,
-and spans around downstream calls. This is what makes observability designed-in: the
-build satisfies it and the post-build gate verifies it. Slices with no request path
-(and all slices when the flag is off) get no observability criteria.
+**Observability — evaluate every slice, regardless of the flag.** First, for each
+slice, decide whether it **authors a request-serving path**: application code that
+*handles* requests — an HTTP/gRPC handler, a message/queue consumer, or a background/cron
+worker loop. This is about request-handling *code written in the slice*,
+**not** infrastructure that provisions or fronts a service (a k8s `Service`/`Ingress`,
+a Helm values change, a Terraform `aws_lb`, a CI pipeline step) — those carry no
+observability criteria and are `cloud-infra-security`'s domain. Then act on
+`project.yaml`'s `observability` block:
+
+- **`enabled: true`** — for each request-serving slice, read
+  `.claude/skills/observability/standard.md` and fold its bar into that slice's
+  **acceptance criteria**: RED metrics (rate/errors/duration) on the new path,
+  structured JSON logs with `trace_id`/`span_id`, and spans around downstream calls.
+  This is what makes observability designed-in: the build satisfies it and the
+  post-build gate verifies it.
+- **`enabled: false`, `waived` absent or empty, but a slice authors a request-serving
+  path** — this is the **backstop**. The project is acquiring a runtime service with
+  observability off and no recorded decision; do **not** silently publish it with zero
+  observability criteria. Raise it as a required decision in the "Quiz the user" step
+  below (default: enable).
+- **`waived` is non-empty** — the decision was already made and recorded; add no
+  observability criteria and do **not** re-prompt.
+- **No request-serving path in any slice** (CLI, library, Helm/Terraform/CI) — nothing
+  fires; leave the `observability` block untouched. This is the common non-service case.
 
 ### 4. Quiz the user
 
@@ -57,6 +72,14 @@ Ask the user:
 - Are the dependency relationships correct?
 - Should any slices be merged or split further?
 - Are the correct slices marked as HITL and AFK?
+- **If the observability backstop fired** (a slice authors a request-serving path while
+  `observability.enabled: false` and `waived` is absent or empty): *"Slice N adds a
+  request-serving path but observability is off. Enable it for this project?"*
+  - **[Y — recommended, default]**: set `observability.enabled: true` in `project.yaml`,
+    then add RED / trace-correlated-log / span criteria to every request-serving slice.
+  - **[n]**: record a non-empty reason in `observability.waived` **and** write a
+    `decision` journal entry. No silent off — a reason is mandatory (same invariant as
+    `record-barrier-gate.sh --skip --reason`), and it surfaces loudly downstream.
 
 Iterate until the user approves the breakdown.
 
