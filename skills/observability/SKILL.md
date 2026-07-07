@@ -17,22 +17,31 @@ canonical bar lives in [standard.md](./standard.md), which has **two layers**:
 - **Service standard** — RED metrics, OTLP export, tracing, SDK lifecycle. This is
   what the flag gates.
 
-## Activation — the project.yaml flag (gates the service standard)
+## Always bundled, dormant by flag
 
-The **Service standard** is **dormant** unless `project.yaml` carries:
+This skill and the `otel-observability-engineer` agent ship in **every** scaffold, so
+the machinery is present the instant a project turns out to ship a service — the flag
+can flip on mid-project without a missing skill. Nothing about the **Service standard**
+activates, though, until `project.yaml` carries:
 
 ```yaml
 observability:
-  enabled: true
+  enabled: true         # gates the service standard below
+  waived: ""            # non-empty reason ⇒ explicit "no observability" decision (no re-prompt)
   otlp_endpoint: ""     # OTLP Collector endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT)
   service_name: ""      # resource attribute; defaults to the project name
 ```
 
-`enabled` is set during design (`grill-with-docs` / `to-prd`) once the project is
-known to ship a runtime service. A non-service project (CLI, IaC, docs, library)
-leaves it `false` — it still gets the baseline, but none of the service standard
-below activates. Even when enabled, RED applies only to tasks that add
-request-serving paths — a task with no handler has nothing to enforce.
+`enabled` is set the moment the project is known to ship a runtime service — early at
+design (`grill-with-docs` / `to-prd`), or at the latest by `to-issues`, which runs a
+**backstop**: if a slice authors a request-serving path while `enabled: false` and
+`waived` is absent or empty, it stops and forces an explicit decision — enable (the default), or
+record a `waived` reason (no silent off). A non-service project (CLI, IaC,
+Helm/Terraform, docs, library) leaves it `false` with `waived: ""` and is **never
+prompted** — it still gets the baseline, but none of the service standard activates.
+Even when enabled, RED applies only to tasks that add request-serving paths — a task
+with no handler has nothing to enforce. `--otel` at scaffold just pre-sets
+`enabled: true` for a project already known to be a service.
 
 ## How each layer reaches the phases
 
@@ -45,7 +54,7 @@ context path).
 |-------|-------|----------|
 | **tdd / tdd-implementer** | baseline | Always: structured logs, correct levels, no swallowed errors |
 | **grill-with-docs / to-prd** | service | Surface SLOs and critical paths; set the flag |
-| **to-issues** | service | Add observability acceptance criteria to service tasks (RED, trace-correlated logs, spans) |
+| **to-issues** | service | Backstop: detect a request-serving slice **regardless of the flag** — add observability acceptance criteria (RED, trace-correlated logs, spans) when enabled, else force an enable/`waived` decision |
 | **tdd / tdd-implementer** | service | Build the instrumentation + its tests when a criterion calls for it |
 | **/next post-build gate** | service | Run `otel-observability-engineer` to verify the diff |
 

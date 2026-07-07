@@ -23,9 +23,11 @@
 #                      diagnosing-bugs, improve-codebase-architecture, prototype).
 #                      Excluded by default to keep per-session context lean; each
 #                      is also individually installable via --skills.  [scaffold only]
-#   --otel             Opt into observability: bundle the observability skill + otel
-#                      agent and set observability.enabled: true. Off by default — the
-#                      gate is dormant unless a project ships a service.  [scaffold only]
+#   --otel             Pre-set observability.enabled: true at scaffold, for a project
+#                      already known to be a runtime service. The observability skill +
+#                      otel agent are ALWAYS bundled (dormant unless enabled), so this
+#                      only flips the flag on early; otherwise to-issues enables it the
+#                      moment a request-serving path appears.  [scaffold only]
 #   --bundle-rules     Copy the coding rules bundled with claude-projects into the
 #                      project's .claude/rules/ so they travel with the repo. Off by
 #                      default — only needed for repos used on machines without your global
@@ -51,7 +53,7 @@ PROJECT_NAME=""
 COPY_SKILLS=true   # skills are bundled by default; opt out with --no-skills
 SKILLS_LIST=""  # empty = the default bundle (core skills; extras need --full)
 FULL=false      # --full also bundles the extras in EXTRA_SKILLS
-OTEL=false      # observability skill + otel agent are opt-in — enable with --otel
+OTEL=false      # --otel pre-sets observability.enabled: true (skill + agent are always bundled)
 BUNDLE_RULES=false # coding rules are NOT bundled by default (global rules already load);
                    # opt in with --bundle-rules for repos used without your global config
 SUBCOMMAND=""
@@ -74,7 +76,8 @@ RULES_SRC="${SCRIPT_DIR}/../rules"
 # Extras: useful-but-occasional skills excluded from the default bundle so each
 # workspace's per-session context stays lean (every bundled skill's description
 # loads into every session). Bundle them with --full, or name one via --skills.
-# observability is separately gated behind --otel.
+# NB: observability is NOT an extra — it ships in the default bundle (dormant unless
+# project.yaml enables it) so the flag can flip on mid-project without a missing skill.
 EXTRA_SKILLS="code-review codebase-researcher diagnosing-bugs improve-codebase-architecture prototype"
 
 # ── colours ──────────────────────────────────────────────────────────────────
@@ -229,10 +232,14 @@ post_install_skill() {
 # pipeline. `security-review`/`cloud-infra-security` (read by the security-reviewer
 # agent + pr-gate classifier) and `agent-controls` (read by the barrier) are listed
 # directly on `next` because expand_skill_deps is one-level, not recursive.
+# `observability` is a companion too: `to-issues` runs a flag-independent backstop that
+# can enable it and read its `standard.md`, and the barrier spawns `otel-observability-engineer`
+# for service tasks — so a `--skills next` install without it hits the same missing-skill
+# break this bundle exists to prevent (its agent tags along via install_skill_agents).
 # `codebase-researcher` is intentionally NOT a dep — it's an optional detour.
 skill_deps() {
   case "$1" in
-    next) echo "grill-with-docs to-prd to-issues tdd codebase-design repo journal sync-status pr-security-review security-review cloud-infra-security agent-controls" ;;
+    next) echo "grill-with-docs to-prd to-issues tdd codebase-design repo journal sync-status pr-security-review security-review cloud-infra-security agent-controls observability" ;;
     pr-security-review) echo "security-review cloud-infra-security" ;;
     *) ;;
   esac
@@ -486,6 +493,7 @@ if [[ "$SUBCOMMAND" == "update-skills" ]]; then
   if $DRY_RUN; then
     echo "  [update] CLAUDE.md managed block + .harness-version"
     [[ -f "$TARGET/docs/README.md" ]] || echo "  [file] docs/README.md (backfill)"
+    [[ -n "$SKILLS_LIST" || -d "$SKILLS_DEST/observability" ]] || echo "  [skill] .claude/skills/observability/ (backfill)"
   else
     refresh_managed_claude_md "$TARGET"
     printf 'harness_sha: %s\nstamped: %s\n' "$(harness_sha)" "$TODAY" > "$TARGET/.harness-version"
@@ -494,6 +502,15 @@ if [[ "$SUBCOMMAND" == "update-skills" ]]; then
     if [[ ! -f "$TARGET/docs/README.md" ]]; then
       mkdir -p "$TARGET/docs"
       printf '%s\n' "$(docs_readme_content)" > "$TARGET/docs/README.md"
+    fi
+    # Backfill the now-always-bundled observability skill (+ its otel agent) for
+    # pre-change workspaces, so the flag can flip on without a missing skill. Only on a
+    # full update (an explicit --skills subset is honored verbatim); never clobbers an
+    # existing copy (the loop above already refreshed it if installed).
+    if [[ -z "$SKILLS_LIST" && ! -d "$SKILLS_DEST/observability" && -d "$SKILLS_SRC/observability" ]]; then
+      mkdir -p "$SKILLS_DEST"
+      cp -r "$SKILLS_SRC/observability" "$SKILLS_DEST/observability"
+      post_install_skill "$TARGET" "observability"
     fi
   fi
 
@@ -575,8 +592,9 @@ EOF
 )"
 
 # project.yaml
-# --otel opts the project into observability: bundle the skill + otel agent (above) and
-# enable the gate here; without it the gate stays dormant (flip enabled later if needed).
+# --otel pre-sets observability.enabled: true for a known-service project. The skill +
+# agent are always bundled regardless; without --otel the flag starts false and to-issues
+# flips it on (or records a waiver) the moment a request-serving path appears.
 if $OTEL; then OBS_ENABLED=true; else OBS_ENABLED=false; fi
 write_file "$TARGET/project.yaml" "$(cat << EOF
 name: ${PROJECT_NAME}
@@ -585,7 +603,9 @@ created: ${TODAY}
 repos: []
 tasks: []
 observability:
-  enabled: ${OBS_ENABLED}       # --otel enables it; flip true later (grill/to-prd) if a service is added
+  enabled: ${OBS_ENABLED}       # true => service standard + otel gate active. --otel sets it; else
+                        #   grill/to-prd/to-issues flip it when a request-serving path appears.
+  waived: ""            # non-empty reason => explicit "no observability" decision; to-issues won't re-prompt
   otlp_endpoint: ""     # OTLP Collector endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT)
   service_name: ""      # resource attribute; defaults to the project name
 validation:
@@ -657,13 +677,9 @@ if $COPY_SKILLS; then
     SKILLS_TO_COPY="$SKILLS_LIST"
   else
     SKILLS_TO_COPY="$(ls -1 "$SKILLS_SRC" 2>/dev/null | tr '\n' ' ')"
-    # observability (+ its otel agent) is opt-in: the gate is dormant unless a project
-    # ships a service, and it never fired by default in any workspace. Exclude it from
-    # the default bundle unless --otel is passed. (An explicit --skills list that names
-    # observability is still honored — that path doesn't reach here.)
-    if ! $OTEL; then
-      SKILLS_TO_COPY="$(printf '%s' "$SKILLS_TO_COPY" | tr ' ' '\n' | grep -vx 'observability' | tr '\n' ' ')"
-    fi
+    # observability ships in the default bundle (dormant unless project.yaml enables it):
+    # the flag can flip on mid-project, so its skill + otel agent must already be present
+    # or to-issues/next would point at missing files. --otel only pre-sets the flag.
     # Extras are opt-in via --full (an explicit --skills list that names one is
     # honored — that path doesn't reach here).
     if ! $FULL; then
