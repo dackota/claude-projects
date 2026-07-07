@@ -181,6 +181,11 @@ language rules apply to the files you touch.
   open the PR by hand. Run `/security-review` first if the slice warrants it.
 - **The build loop is bounded** by `validation.max_rework` (default 3): a slice that
   keeps failing the checker escalates to you, not another round.
+- **GitHub via `gh-axi` (required).** This flow requires the agent-first `gh-axi` CLI
+  (https://github.com/kunchenguid/gh-axi) installed and `gh` authenticated. For any GitHub
+  operation — opening or reviewing PRs, issues, checking CI — use `gh-axi <command>` rather
+  than raw `gh`; its output is token-efficient and each response suggests the next command.
+  E.g. open a PR with `gh-axi pr create --title "…" --body-file <path>`.
 CLAUDE_MD_EOF
 }
 
