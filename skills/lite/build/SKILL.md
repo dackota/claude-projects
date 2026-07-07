@@ -75,8 +75,8 @@ Per task, act on the orchestrator's `FINAL:`:
   is built + validated but **uncommitted** (the lite flow has no auto-commit or PR gate).
   Review, then commit and open the PR. Use **`gh-axi`** for the GitHub side (agent-first,
   token-efficient output) rather than raw `gh` — `gh-axi pr create --title "…" --body-file
-  <path>` (requires `gh-axi` installed + `gh` authenticated). Run `/security-review` by
-  hand first if the slice warrants it.
+  <path>`, or `npx -y gh-axi pr create …` if it isn't installed globally (needs `gh`
+  authenticated). Run `/security-review` by hand first if the slice warrants it.
 - **BLOCKED-CAP** → leave the task `active` (or set `blocked` if it clearly can't proceed).
   Surface the recurring finding: a gate that keeps blocking the same slice usually means a
   wrong seam, a flaky test, or an impossible criterion — a human call, not another round.
@@ -94,5 +94,6 @@ note) rather than restating each loop.
   independent `lite-checker` owns the verdict.
 - You flip task status (the sub-agent can't); you never commit or open PRs for the user.
 - All work lands in `worktrees/`; `repos/` stays read-only (a hook enforces it).
-- Any GitHub interaction (PRs, issues, CI checks) goes through **`gh-axi`** (a required
-  tool: `gh-axi <command>`), not raw `gh` — the agent-first path with token-efficient output.
+- Any GitHub interaction (PRs, issues, CI checks) goes through **`gh-axi`** (`gh-axi
+  <command>`, or `npx -y gh-axi <command>` if not installed globally), not raw `gh` — the
+  agent-first path with token-efficient output.

@@ -157,9 +157,9 @@ Then, by hand:
   2. **`lite-checker`** (Sonnet) independently **exercises** the change — runs it end-to-end, falling back to tests or a targeted probe — and judges it against the acceptance criteria.
   3. A `BLOCK` loops the findings back to a fresh builder; the loop repeats until the checker **PASSes**, the rework cap fires (`validation.max_rework`, default 3 → escalates to you), or the checker genuinely **can't run** the change (stops with the reason).
 
-  Ask to build several **independent** slices in parallel and it spawns one orchestrator per task, each in its own worktree. On success the slice is built and validated but **uncommitted** — you review, commit, and open the PR by hand. GitHub operations in the lite flow go through the agent-first [`gh-axi`](https://github.com/kunchenguid/gh-axi) (`gh-axi pr create …`) rather than raw `gh`.
+  Ask to build several **independent** slices in parallel and it spawns one orchestrator per task, each in its own worktree. On success the slice is built and validated but **uncommitted** — you review, commit, and open the PR by hand. GitHub operations in the lite flow go through the agent-first [`gh-axi`](https://github.com/kunchenguid/gh-axi) (`gh-axi pr create …`, or `npx -y gh-axi …` with no install) rather than raw `gh`.
 
-> **Requirements:** the lite flow expects [`gh-axi`](https://github.com/kunchenguid/gh-axi) installed and `gh` authenticated (`gh auth login`) for its GitHub steps.
+> **Requirements:** the lite flow's GitHub steps use [`gh-axi`](https://github.com/kunchenguid/gh-axi) — run it globally if installed, else via `npx -y gh-axi` — and need `gh` authenticated (`gh auth login`).
 
 **Layout.** Same `repos/` + `worktrees/` split as the full flow, with one rule enforced by a hook: **`repos/` is read-only** (base clones for reference) and **all work happens in `worktrees/`**. The lite bundle is just `grill-with-docs` + `to-prd` + `to-issues` + `build` + `codebase-design` + `observability`, plus the three `lite-*` agents.
 

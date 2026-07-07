@@ -54,6 +54,7 @@ assert "CLAUDE.md: work in worktrees"   "$(grep -qi 'worktrees' "$T/CLAUDE.md" &
 assert "CLAUDE.md: repos/ read-only"    "$(grep -qi 'read-only' "$T/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: NOT the /next router" "$(! grep -q '/next' "$T/CLAUDE.md" && echo true || echo false)"
 assert "CLAUDE.md: GitHub via gh-axi"   "$(grep -q 'gh-axi' "$T/CLAUDE.md" && echo true || echo false)"
+assert "CLAUDE.md: npx -y gh-axi fallback" "$(grep -q 'npx -y gh-axi' "$T/CLAUDE.md" && echo true || echo false)"
 
 # ── bundled skills (exactly the 6 lite-flow skills) ───────────────────────────
 assert "skill: build bundled"           "$([[ -d $T/.claude/skills/build ]] && echo true || echo false)"
