@@ -106,6 +106,7 @@ proj update-skills [<project-name>] [options] # re-sync bundled skills in an exi
 | `--skills [LIST]` | Bundle only a comma-separated subset (bare `--skills` = the default core) | both |
 | `--no-skills` | Don't bundle skills into the new project | scaffold |
 | `--full` | Also bundle the extras (`code-review`, `codebase-researcher`, `diagnosing-bugs`, `improve-codebase-architecture`, `prototype`) — excluded from the default core to keep per-session context lean | scaffold |
+| `--lite` | Scaffold the **lightweight flow** instead (see [Lite flow](#lite-flow) below) — a manual `grill → to-prd → to-issues → /build` pipeline with no router, audit machinery, or PR gates. Delegates to the standalone `scripts/proj-lite.sh` | scaffold |
 | `--otel` | Pre-set `observability.enabled: true` at scaffold for a project already known to be a service. The `observability` skill + otel agent are **always** bundled (dormant unless enabled); this only flips the flag on early — otherwise `to-issues` does when a request-serving path appears | scaffold |
 | `--bundle-rules` | Copy the coding rules into `.claude/rules/` so they travel with the repo (off by default — global rules already load; opt in for teammates, CI, or fresh clones) | scaffold |
 | `--dry-run` | Print what would be created/updated without writing | both |
@@ -132,6 +133,37 @@ cd my-feature-work && proj update-skills                # update every installed
 proj update-skills my-feature-work --dir ~/Documents/repos/projects
 proj update-skills --skills tdd,next --dry-run          # preview a subset update
 ```
+
+## Lite flow
+
+For a smaller project you don't want the full `/next` pipeline for, `--lite` scaffolds a **lightweight workspace**: you drive four commands by hand, and there's no router, journal/audit machinery, `repo.sh`, or PR gate.
+
+```bash
+proj my-thing --lite          # or run the standalone: proj-lite my-thing
+cd my-thing
+git clone <url> repos/<name>  # clone the repo(s) you'll work in (read-only reference)
+```
+
+Then, by hand:
+
+```
+/grill-with-docs   →   /to-prd   →   /to-issues   →   /build
+```
+
+- **`/grill-with-docs`**, **`/to-prd`** — same as the full flow: sharpen `CONTEXT.md`, then write a PRD to `docs/plans/`.
+- **`/to-issues`** — breaks the PRD into **self-contained tasks** in `project.yaml`: acceptance criteria live *inline* (so `/build` needs nothing else), each task names its target `repo`, and any service observability is expanded into concrete build criteria up front (shift-left) rather than left for the builder to figure out.
+- **`/build [task-id]`** — builds the next unblocked task by spawning a **`lite-orchestrator`** sub-agent that owns a build→check→iterate loop off your main session:
+  1. **`lite-builder`** (Sonnet) builds the slice in a fresh `worktrees/<task>` via a lean TDD red-green loop (deep modules, full hardening checklist, baseline observability).
+  2. **`lite-checker`** (Sonnet) independently **exercises** the change — runs it end-to-end, falling back to tests or a targeted probe — and judges it against the acceptance criteria.
+  3. A `BLOCK` loops the findings back to a fresh builder; the loop repeats until the checker **PASSes**, the rework cap fires (`validation.max_rework`, default 3 → escalates to you), or the checker genuinely **can't run** the change (stops with the reason).
+
+  Ask to build several **independent** slices in parallel and it spawns one orchestrator per task, each in its own worktree. On success the slice is built and validated but **uncommitted** — you review, commit, and open the PR by hand. GitHub operations in the lite flow go through the agent-first [`gh-axi`](https://github.com/kunchenguid/gh-axi) (`gh-axi pr create …`, or `npx -y gh-axi …` with no install) rather than raw `gh`.
+
+> **Requirements:** the lite flow's GitHub steps use [`gh-axi`](https://github.com/kunchenguid/gh-axi) — run it globally if installed, else via `npx -y gh-axi` — and need `gh` authenticated (`gh auth login`).
+
+**Layout.** Same `repos/` + `worktrees/` split as the full flow, with one rule enforced by a hook: **`repos/` is read-only** (base clones for reference) and **all work happens in `worktrees/`**. The lite bundle is just `grill-with-docs` + `to-prd` + `to-issues` + `build` + `codebase-design` + `observability`, plus the three `lite-*` agents.
+
+> `scripts/proj-lite.sh` is self-contained (its own arg parsing and embedded `CLAUDE.md`) so the lite flow can be lifted into its own repo: take that script, `skills/lite/`, the shared `skills/{to-prd,codebase-design,observability}/`, and `agents/lite-{orchestrator,builder,checker}.md`.
 
 ## Scaffolded structure
 
