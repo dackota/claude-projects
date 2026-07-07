@@ -45,6 +45,7 @@ Bundled skills:
 - **Agent-bearing skills**: a skill declares the agents it needs via an `agents:` list in its `SKILL.md` frontmatter. `install_skill_agents()` reads that with `yq` and copies the named `agents/<name>.md` into the workspace's `.claude/agents/` (auto-discovered, no wiring). Add new agents under `agents/`.
 - **Orchestrator companions**: if a skill is a hard dependency of `/next` (or another orchestrator) — e.g. `tdd` now needs `codebase-design` for its design vocabulary — add it to `skill_deps()` in `scripts/proj.sh` so a `--skills next` subset install pulls it too (and add a `next: companion …` assertion in `test-proj.sh`).
 - **`security-review` & `cloud-infra-security`** are the canonical sources for those skills; `~/.claude/skills/<name>` are symlinks back to them.
+- **The lite flow** (`--lite`): a separate, lightweight pipeline (`grill → to-prd → to-issues → /build`, no router/audit/PR-gates) scaffolded by the **standalone** `scripts/proj-lite.sh` (kept self-contained so it can be lifted into its own repo; `proj --lite` just delegates to it). Its forked skill variants live in `skills/lite/{grill-with-docs,to-issues,build}/` and install under their canonical command names; it also bundles the shared `to-prd`/`codebase-design`/`observability` and the `agents/lite-{orchestrator,builder,checker}.md` trio. `/build` spawns `lite-orchestrator`, which owns a `lite-builder` → `lite-checker` build→check→iterate loop. `repos/` is read-only (all work in `worktrees/`), enforced by `skills/lite/build/hooks/repos-readonly.sh`. **`skills/lite/` is deliberately excluded from the full bundle**: `proj.sh` enumerates only dirs with a top-level `SKILL.md`. Tested by `scripts/test-proj-lite.sh`. When adding a lite skill/agent, update `LITE_FORKED_SKILLS`/`LITE_SHARED_SKILLS` in `proj-lite.sh`.
 - **Changing the scaffold template**: edit the `claude_md_content()` heredoc in `scripts/proj.sh`. Run `bash scripts/test-proj.sh` to verify.
 - **Installing `proj` globally**: `ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj`
 - **Installing skills globally**: `ln -s "$(pwd)/skills/<name>" ~/.claude/skills/<name>`
@@ -56,6 +57,7 @@ proj <name>                     # scaffold + bundle the core skills (default)
 proj <name> --full              # also bundle the extras (EXTRA_SKILLS in proj.sh)
 proj <name> --no-skills         # scaffold without bundling skills
 proj <name> --otel              # pre-set observability.enabled: true (skill+agent always bundled)
+proj <name> --lite              # scaffold the lightweight flow (delegates to proj-lite.sh)
 proj <name> --skills tdd,grill-with-docs  # scaffold + bundle a specific subset
 proj <name> --jira KEY          # include Jira key in project.yaml
 proj <name> --bundle-rules      # also vendor coding rules into .claude/rules/

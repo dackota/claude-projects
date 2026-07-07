@@ -19,6 +19,11 @@
 #                      e.g. tdd,grill-with-docs) to restrict to a subset; bare
 #                      --skills is the same as the default (all skills).
 #   --no-skills        Opt out of bundling skills into the new project.
+#   --lite             Scaffold the lightweight flow instead (grill → to-prd → to-issues
+#                      → /build, where /build runs a build→check→iterate sub-agent loop).
+#                      Delegates to the self-contained scripts/proj-lite.sh; all other
+#                      flags except --dir/--jira/--otel/--dry-run/--force are ignored.
+#                      [scaffold only]
 #   --full             Also bundle the extras (code-review, codebase-researcher,
 #                      diagnosing-bugs, improve-codebase-architecture, prototype).
 #                      Excluded by default to keep per-session context lean; each
@@ -395,6 +400,18 @@ usage() {
   exit 0
 }
 
+# ── delegate to the lite scaffolder ────────────────────────────────────────────
+# `proj <name> --lite [opts]` hands off to the self-contained proj-lite.sh (the lite
+# flow can also be invoked directly as proj-lite). Strip --lite and forward the rest;
+# proj-lite has its own arg parser and ignores flags it doesn't know.
+for _a in "$@"; do
+  if [[ "$_a" == "--lite" ]]; then
+    LITE_ARGS=()
+    for _b in "$@"; do [[ "$_b" == "--lite" ]] || LITE_ARGS+=("$_b"); done
+    exec bash "${SCRIPT_DIR}/proj-lite.sh" ${LITE_ARGS[@]+"${LITE_ARGS[@]}"}
+  fi
+done
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)         usage ;;
@@ -676,7 +693,9 @@ if $COPY_SKILLS; then
   if [[ -n "$SKILLS_LIST" ]]; then
     SKILLS_TO_COPY="$SKILLS_LIST"
   else
-    SKILLS_TO_COPY="$(ls -1 "$SKILLS_SRC" 2>/dev/null | tr '\n' ' ')"
+    # Only real skill dirs (those with a SKILL.md); excludes grouping dirs like
+    # lite/, whose forked variants ship via the separate proj-lite.sh, not this bundle.
+    SKILLS_TO_COPY="$(for d in "$SKILLS_SRC"/*/; do [[ -f "${d}SKILL.md" ]] && basename "$d"; done | tr '\n' ' ')"
     # observability ships in the default bundle (dormant unless project.yaml enables it):
     # the flag can flip on mid-project, so its skill + otel agent must already be present
     # or to-issues/next would point at missing files. --otel only pre-sets the flag.
