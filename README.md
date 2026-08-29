@@ -1,132 +1,225 @@
-# crew
+# claude-projects
 
-crew helps you get coding work done with Claude Code. You describe what you want. Claude asks you questions until the plan is clear. Then Claude builds each piece in parallel, checks its own work, and opens a pull request for each piece.
+**Scaffold self-contained Claude Code workspaces that remember, orchestrate specialized agents through a workflow, and enforce their own guardrails.** `proj` creates a project directory where Claude picks up exactly where it left off, *orchestrates a pipeline of focused sub-agents* to carry a rough idea through to shipped code, and can't quietly skip the disciplines you care about — repo hygiene, worktree isolation, an independent review before every PR. Skills, hooks, and agents ship *inside the workspace*, like a virtualenv for one body of work.
 
-You do the thinking up front. The build runs on its own.
+## The problem
 
-Full design: [docs/SPEC.md](docs/SPEC.md).
+Claude Code starts every session with a blank slate, and nothing holds it to your conventions. For a quick fix that's fine. For work that spans days and many sessions, two things bite you:
 
-## Before you start
+- **Re-orientation tax.** You re-explain the goal; Claude reopens an abandoned plan as if it's current. State that lives only in chat history evaporates when the session ends.
+- **Drifting discipline.** Repos get cloned anywhere; worktrees fall behind their base; PRs open with no review. Prose rules in `CLAUDE.md` get ignored under pressure.
 
-You need these tools installed:
+## What `proj` does
 
-| Tool | What it is | Install |
-|------|------------|---------|
-| Claude Code | The AI coding agent that runs in your terminal | https://docs.anthropic.com/en/docs/claude-code |
-| `git` | Version control | Comes with Xcode tools on Mac, or `brew install git` |
-| `gh` | GitHub from the command line | `brew install gh`, then `gh auth login` |
-| `jq` | Reads JSON | `brew install jq` |
-| `yq` | Reads YAML | `brew install yq` |
+It creates a workspace with control files that hold project state *outside* the conversation, plus bundled skills, hooks, and agents that keep those files current and enforce discipline automatically. Four pillars:
 
-Your code must already be in a git repo on your computer. crew does not clone repos.
+- **Durable memory** — `STATUS.md` (a ~500-token current-state synthesis Claude reads *first* every session), an append-only `journal.yaml`, a `CONTEXT.md` glossary, and ADRs for hard-to-reverse decisions. Re-orientation cost drops to near zero.
+- **An orchestrated, idea-to-ship pipeline** — the main session is an *orchestrator*, not the thing that types every line. `/next` reads the workspace state and dispatches the right phase (`grill-with-docs → to-prd → to-issues → tdd`), and the focused work is handed to short-lived sub-agents on fresh contexts and the right model tier: a Sonnet `tdd-implementer` runs the red-green loop (refactoring at close-out) while the orchestrator plans and reviews. You never have to remember which skill comes next.
+- **Repo & worktree discipline** — the `repo` skill routes every repo/worktree operation through a generated `scripts/repo.sh`, blocks raw `git clone` / `worktree add`, and warns before you build on a stale worktree. Dependent slices can **stack** on an in-review branch so work never stalls.
+- **Independent review at two seams — a post-build barrier, then the PR gate.** Every gate is a fresh agent that never saw the implementation. **Right after the build, not at the PR,** `/next` commits the slice and runs a **parallel barrier**: `implementation-validator` (does it meet its acceptance criteria?), `correctness-reviewer` (any correctness bug *this diff introduced* that no criterion named — nil derefs, races, leaks, swallowed errors?), `runtime-validator` (does it actually **build, boot, and run** the affected flow?), and — for service tasks — `otel-observability-engineer`. Any critical finding **loops back to `tdd`**; the task never reaches `done` (or a PR) until every gate passes. The orchestrator then writes a per-slice **validation record** to `docs/validations/` — verdict · what · how · evidence for each gate. **Security is checked at the PR gate:** `pr-security-review` holds `gh pr create` until a `security-reviewer` signs off against bundled checklists and appends its section to that record. **Skipping a gate is possible but never silent:** for a one-off run you (or the orchestrator) can skip any gate — including security — only by recording a mandatory *reason* through a validating recorder; the skip is then honored as satisfying the gate, surfaced in a loud **"⚠ Skipped reviews"** section in the PR body, and tallied in `STATUS.md`. A reasonless skip still blocks. The invariant is *no **silent** skip*, not *no skip*.
 
-## Install crew
+Everything is **project-local**: skills, hooks, and agents are copied into the workspace and wired automatically, so it stays self-contained and portable.
+
+The shape of it — one orchestrator, many short-lived specialists:
+
+```
+main session · orchestrator (Opus)
+  holds project state · plans · routes · reviews · writes the validation record
+      │
+      ├─ /tdd (hand-invoked) .. Opus runs the loop inline — for ad-hoc builds
+      │
+      ├─ /next builds a task .. spawns  tdd-implementer (Sonnet) → tests + code    ┐
+      │                         commit, then the post-build BARRIER (in parallel): │
+      │                            implementation-validator → acceptance           │ fresh
+      │                            correctness-reviewer     → diff-introduced bugs  │ context
+      │                            runtime-validator        → builds · boots · runs │ per gate
+      │                            otel-…-engineer          → instrumentation (svc) │
+      │                              └─ any BLOCK loops back to tdd-implementer      │
+      │                            all PASS → validation record → task done         │
+      └─ gh pr create ........ spawns  security-reviewer     → security (appends)   ┘
+```
+
+The build **loop** is non-interactive: an AFK task's design was settled upstream (grilling, confirmed in `/to-prd` and `/to-issues`), so its acceptance criteria are the contract. A **HITL** task is flagged because it needs human input — the orchestrator gathers that input *first*, then the loop runs non-interactively like any other. Two ways to build, by caller: **hand-invoke `/tdd`** when you want Opus to do the TDD itself for an ad-hoc request (it runs the loop inline, with you watching); **`/next`** builds pipeline tasks by spawning the Sonnet `tdd-implementer` sub-agent on a fresh context (gathering any HITL input up front), so the orchestrator just plans/reviews. Every sub-agent — the implementer, the post-build barrier gates (acceptance, correctness, runtime, and observability for services), and the PR-gate security reviewer — starts clean, keeping the heavy, repeatable work on the cheaper model without inheriting a long session's drift.
+
+## Quick start
 
 ```bash
-git clone https://github.com/dackota/crew ~/repos/crew
-ln -s ~/repos/crew/scripts/crew.sh /usr/local/bin/crew
+proj my-feature          # scaffold + bundle all skills and hooks (default)
+cd my-feature
+git init && git add -A && git commit -m "chore: scaffold workspace"  # see tip below
+$EDITOR PROJECT.md       # fill in your goal
+claude                   # Claude reads STATUS.md first, then /next routes you
 ```
 
-Check it works:
+> **Tip — put the workspace itself under git.** The scaffold already writes a
+> `.gitignore` (excluding `repos/` and `worktrees/`), so `git init` in the new
+> workspace and commit as you go. The control files — `STATUS.md`, `journal.yaml`,
+> `CONTEXT.md`, plans, ADRs, and validation records — then carry full revision
+> history: you can see how the plan and decisions evolved, diff or roll back a bad
+> turn, and share project state with teammates. This repo tracks the **project**;
+> the actual code lives in the repos under `repos/`, each with its own history and
+> managed via `scripts/repo.sh`.
+
+From there you rarely pick a skill by hand — **`/next` routes you.** It reads the workspace state, reports the phase, and runs the right one:
+
+| Phase | When | Runs |
+|-------|------|------|
+| Bootstrap | `PROJECT.md` goal still blank | Claude helps you fill in `PROJECT.md` |
+| Grill | no PRD yet | `/grill-with-docs` → `/to-prd` |
+| Slice | PRD exists, no tasks | `/to-issues` |
+| Pick | tasks exist, none active | next unblocked task → build via `tdd-implementer` sub-agent (HITL input gathered first) |
+| Build | a task is active | continue the build via the sub-agent; the post-build barrier loops back here on any gate's critical finding |
+| Land | task done, not PR'd | `repo.sh pr` enforces the recorded barrier verdict (acceptance + correctness), then the security review at `gh pr create` |
+
+The planning arc auto-chains in one session; building breaks to a fresh session per task to resist context drift.
+
+## When to use it
+
+Pays off when work spans **multiple sessions**, touches **real repos**, and ends in **PRs**.
+
+- **Good fit:** features, migrations, or refactors across many sessions; anything you'll open PRs against; investigations where decisions accumulate; anything with a Jira ticket and a plan.
+- **Not worth it:** a quick one-off fix, a single-session task, a question answered in one exchange.
+
+If unsure, scaffold it anyway — `proj` takes seconds and stays out of your way.
+
+## Install
 
 ```bash
-crew --help
+git clone <repo-url> ~/Documents/repos/claude-projects
+cd ~/Documents/repos/claude-projects
+ln -s "$(pwd)/scripts/proj.sh" /usr/local/bin/proj   # optional: put proj on PATH
 ```
 
-## Set up a workspace
+Every `proj <name>` bundles the **core skill set** (14 skills — the `/next` pipeline, its gate dependencies, plus the always-present `observability` skill) into the workspace's `.claude/skills/` and wires the hooks automatically. Every bundled skill's description loads into every session's context, so the default bundle is deliberately lean. The **extras** (`code-review`, `codebase-researcher`, `diagnosing-bugs`, `improve-codebase-architecture`, `prototype`) are opt-in via `--full`, or individually via `--skills <name>`. Pass `--no-skills` to opt out entirely. The `observability` skill (and its `otel-observability-engineer` agent) ship in the core bundle but stay **dormant unless `project.yaml` enables it** — so a project that turns out to ship a service can flip the flag on mid-stream without a missing skill (`to-issues` forces that decision when a request-serving path appears). `--otel` just pre-sets `observability.enabled: true` at scaffold for a project already known to be a service.
 
-A workspace is a folder that sits next to your code. It holds the plan, the task list, and a log. Your code stays where it is.
+## Usage
 
 ```bash
-crew myproject --repo ~/repos/my-app
+proj <project-name> [options]                 # scaffold a new workspace (default)
+proj update-skills [<project-name>] [options] # re-sync bundled skills in an existing one
 ```
 
-That makes a folder named `myproject` in the current directory. To point at more than one repo, pass `--repo` more than once. To track tasks as GitHub Issues too, add `--tracker github`.
-
-Now open it in Claude Code:
+| Flag | Description | Applies to |
+|------|-------------|------------|
+| `--dir <path>` | Base directory (default: current directory) | both |
+| `--jira <KEY>` | Jira project key, e.g. `PROJ` | scaffold |
+| `--skills [LIST]` | Bundle only a comma-separated subset (bare `--skills` = the default core) | both |
+| `--no-skills` | Don't bundle skills into the new project | scaffold |
+| `--full` | Also bundle the extras (`code-review`, `codebase-researcher`, `diagnosing-bugs`, `improve-codebase-architecture`, `prototype`) — excluded from the default core to keep per-session context lean | scaffold |
+| `--lite` | Scaffold the **lightweight flow** instead (see [Lite flow](#lite-flow) below) — a manual `grill → to-prd → to-issues → /build` pipeline with no router, audit machinery, or PR gates. Delegates to the standalone `scripts/proj-lite.sh` | scaffold |
+| `--otel` | Pre-set `observability.enabled: true` at scaffold for a project already known to be a service. The `observability` skill + otel agent are **always** bundled (dormant unless enabled); this only flips the flag on early — otherwise `to-issues` does when a request-serving path appears | scaffold |
+| `--bundle-rules` | Copy the coding rules into `.claude/rules/` so they travel with the repo (off by default — global rules already load; opt in for teammates, CI, or fresh clones) | scaffold |
+| `--dry-run` | Print what would be created/updated without writing | both |
+| `--force` | Overwrite if the target directory exists | scaffold |
+| `--show-claude-md` | Print the embedded CLAUDE.md template and exit | — |
+| `-h, --help` | Show help | — |
 
 ```bash
-cd myproject
-claude
+proj my-feature-work                                    # core skills bundled (lean default)
+proj kitchen-sink --full                                # core + extras
+proj payments-migration --dir ~/Documents/repos --jira PROJ
+proj minimal --no-skills                                # scaffold without skills
+proj spike --skills tdd,grill-with-docs                 # bundle a subset
+proj portable --bundle-rules                            # vendor coding rules into the repo
+proj --dry-run my-feature                               # preview without writing
 ```
 
-## The workflow
+### `update-skills`
 
-Type these commands into Claude Code, in order. Each one starts with a slash.
-
-### 1. `/research <topic>` (optional)
-
-Claude reads docs and code and writes notes to `docs/research/`. Use this when you are not sure how something works yet.
-
-### 2. `/grill-with-docs`
-
-Tell Claude what you want to build. Claude asks you questions, in rounds, until nothing is left unclear. Answer them. This is the most important step. Time spent here saves many fix rounds later.
-
-### 3. `/to-spec`
-
-Claude writes the plan as a spec in `docs/specs/`. Read it. Ask for changes if anything is off.
-
-### 4. `/to-tickets`
-
-Claude breaks the spec into small tasks and shows you the list. Each task is one complete piece that can be tested on its own. Say yes, or ask to merge or split tasks. Claude then writes them to `project.yaml`.
-
-### 5. `/build`
-
-Claude builds every task that is ready, all at once. For each task it:
-
-1. Makes a separate copy of your repo (a git worktree) so tasks do not collide.
-2. Writes tests and code.
-3. Has a second agent check that the task does what the spec says, by running the real thing.
-4. Fixes problems, up to 3 times.
-5. Opens a pull request, and merges it when CI is green and your repo's rules allow.
-
-It does not ask you anything. When a task cannot be finished, it is marked `blocked` with a note, and Claude tells you at the end.
-
-To build only some tasks: `/build T-3 T-5`.
-
-## Coming back later
-
-Open the workspace and type:
-
-```
-/resume
-```
-
-Claude tells you what is active, blocked, and ready, and what command to run next.
-
-## Files you will see
-
-| File | What it is |
-|------|------------|
-| `project.yaml` | The task list. This is the source of truth |
-| `STATUS.md` | A short summary. Read this first |
-| `journal.yaml` | A log of everything that happened |
-| `docs/specs/` | The plans |
-| `docs/research/` | Research notes |
-| `worktrees/` | Working copies of your repos, one per task. Safe to ignore |
-
-## When something goes wrong
-
-**A task is blocked.** Read its `note` in `project.yaml`. Fix the code by hand in its folder under `worktrees/`, or change the task and run `/build T-<n>` again.
-
-**A pull request stayed open.** CI failed, or your repo needs a review. Handle it on GitHub as usual. Then run `bash scripts/land.sh T-<n>` to finish.
-
-**Claude refuses a git command.** A safety hook stops Claude from committing to your real repo folder. All work must happen in `worktrees/`. This is on purpose.
-
-**Claude will not stop.** A hook asks for a journal entry when a task changed status. Claude will add one and stop.
-
-## Other commands
+Re-sync already-bundled skills from this repo into an existing workspace to pick up the latest changes — hooks are re-wired and companion files (e.g. `scripts/repo.sh`) reinstalled idempotently. `<project-name>` is optional; when omitted, the current directory (or `--dir`) is treated as the project root. Only skills already present in `.claude/skills/` are updated; pass `--skills LIST` to restrict which ones. Unlike scaffolding, it does **not** pull in transitive dependencies — an explicit list is honored verbatim.
 
 ```bash
-crew myproject --repo ~/repos/my-app --dry-run   # show what would be made
-crew myproject --repo ~/repos/my-app --force     # start over
-crew update-skills [myproject]                    # pull in newer skills after updating crew
+cd my-feature-work && proj update-skills                # update every installed skill
+proj update-skills my-feature-work --dir ~/Documents/repos/projects
+proj update-skills --skills tdd,next --dry-run          # preview a subset update
 ```
 
-## For contributors
+## Lite flow
+
+For a smaller project you don't want the full `/next` pipeline for, `--lite` scaffolds a **lightweight workspace**: you drive four commands by hand, and there's no router, journal/audit machinery, `repo.sh`, or PR gate.
 
 ```bash
-bash scripts/test-crew.sh
+proj my-thing --lite          # or run the standalone: proj-lite my-thing
+cd my-thing
+git clone <url> repos/<name>  # clone the repo(s) you'll work in (read-only reference)
 ```
 
-Skills in `skills/` are vendored from Matt Pocock's [engineering skills](https://github.com/mattpocock/skills/tree/main/skills/engineering) with two small edits, plus our own `build`, `resume`, `journal`, `sync-status`, and `verify`.
+Then, by hand:
+
+```
+/grill-with-docs   →   /to-prd   →   /to-issues   →   /build
+```
+
+- **`/grill-with-docs`**, **`/to-prd`** — same as the full flow: sharpen `CONTEXT.md`, then write a PRD to `docs/plans/`.
+- **`/to-issues`** — breaks the PRD into **self-contained tasks** in `project.yaml`: acceptance criteria live *inline* (so `/build` needs nothing else), each task names its target `repo`, and any service observability is expanded into concrete build criteria up front (shift-left) rather than left for the builder to figure out.
+- **`/build [task-id]`** — builds the next unblocked task by spawning a **`lite-orchestrator`** sub-agent that owns a build→check→iterate loop off your main session:
+  1. **`lite-builder`** (Sonnet) builds the slice in a fresh `worktrees/<task>` via a lean TDD red-green loop (deep modules, full hardening checklist, baseline observability).
+  2. **`lite-checker`** (Sonnet) independently **exercises** the change — runs it end-to-end, falling back to tests or a targeted probe — and judges it against the acceptance criteria.
+  3. A `BLOCK` loops the findings back to a fresh builder; the loop repeats until the checker **PASSes**, the rework cap fires (`validation.max_rework`, default 3 → escalates to you), or the checker genuinely **can't run** the change (stops with the reason).
+
+  Ask to build several **independent** slices in parallel and it spawns one orchestrator per task, each in its own worktree. On success the slice is built and validated but **uncommitted** — you review, commit, and open the PR by hand. GitHub operations in the lite flow go through the agent-first [`gh-axi`](https://github.com/kunchenguid/gh-axi) (`gh-axi pr create …`, or `npx -y gh-axi …` with no install) rather than raw `gh`.
+
+> **Requirements:** the lite flow's GitHub steps use [`gh-axi`](https://github.com/kunchenguid/gh-axi) — run it globally if installed, else via `npx -y gh-axi` — and need `gh` authenticated (`gh auth login`).
+
+**Layout.** Same `repos/` + `worktrees/` split as the full flow, with one rule enforced by a hook: **`repos/` is read-only** (base clones for reference) and **all work happens in `worktrees/`**. The lite bundle is just `grill-with-docs` + `to-prd` + `to-issues` + `build` + `codebase-design` + `observability`, plus the three `lite-*` agents.
+
+> `scripts/proj-lite.sh` is self-contained (its own arg parsing and embedded `CLAUDE.md`) so the lite flow can be lifted into its own repo: take that script, `skills/lite/`, the shared `skills/{to-prd,codebase-design,observability}/`, and `agents/lite-{orchestrator,builder,checker}.md`.
+
+## Scaffolded structure
+
+```
+<project-name>/
+├── CLAUDE.md          # project conventions for Claude Code
+├── PROJECT.md         # goals and context (fill this in)
+├── STATUS.md          # ~500-token current-state synthesis (read first each session)
+├── CONTEXT.md         # domain glossary (canonical terms)
+├── journal.yaml       # append-only structured event log
+├── project.yaml       # source of truth: repos, tasks, Jira key, observability + validation config
+├── .claude/
+│   ├── skills/        # bundled skills (default; --no-skills to opt out)
+│   ├── agents/        # bundled agents (tdd-implementer, implementation-validator, correctness-reviewer, runtime-validator, otel-observability-engineer, security-reviewer)
+│   ├── rules/         # coding rules (only when scaffolded with --bundle-rules)
+│   └── settings.json  # auto-wired hooks (journal, sync-status, repo, pr-security-review)
+├── docs/              # plans/, adr/, research/, validations/
+├── scripts/           # repo.sh (when the repo skill is bundled) + one-off scripts
+├── repos/             # cloned repos (gitignored; managed via scripts/repo.sh)
+└── worktrees/         # git worktrees, worktrees/<task>/<repo> (gitignored)
+```
+
+## Skills
+
+Bundled into every workspace by default. `/next` orchestrates them, but each stays directly invokable.
+
+| Skill | What it does |
+|-------|--------------|
+| `/next` | Reads workspace state and routes to the right phase below |
+| `/grill-with-docs` | Interviews you relentlessly to find holes in a rough idea; sharpens `CONTEXT.md`, offers ADRs |
+| `/to-prd` | Synthesizes the conversation into a structured PRD (Jira issue or `docs/plans/`) |
+| `/to-issues` | Breaks the PRD into vertical-slice issues marked AFK (autonomous) or HITL (needs a human) |
+| `/tdd` | Red-green loop, one test at a time (refactoring moves to close-out, checked by the acceptance gate); tests attach only at a **seam** named upstream in `to-prd`/`to-issues`. The build loop is non-interactive (a HITL task gathers its human input first). Hand-invoke for Opus to build inline (ad-hoc); `/next` builds pipeline tasks via the Sonnet `tdd-implementer` sub-agent, then runs the post-build acceptance gate |
+| `/codebase-design` | Shared vocabulary for designing **deep modules** (Module/Interface/Depth/Seam/Adapter/…) plus the deletion test and a parallel-agent "design it twice" exploration. `tdd`, `code-review`, and `improve-codebase-architecture` draw their design language from it; pulled as a `/next` companion of `tdd` |
+| `/code-review` | Reviews the working diff across two axes — Standards (repo conventions + a code-smell baseline) and Spec (does it match the originating plan/issue) — via two parallel sub-agents. Correctness/standards only; security stays with `/pr-security-review`. Hand-invoked — the richer, on-demand counterpart to the pipeline's always-on `correctness-reviewer` gate |
+| `/diagnosing-bugs` | A discipline for hard bugs: build a red-capable feedback loop *first*, then reproduce, form ranked hypotheses, instrument one variable at a time, and add a regression test at a real seam before the fix. Ships a HITL repro harness |
+| `/prototype` | Build throwaway code to answer a design question before committing — a portable pure-logic module behind a disposable TUI, or 3+ structurally-different UI variants on one route. The answer is captured as an ADR or folded into the PRD |
+| `/improve-codebase-architecture` | Scans for **deepening opportunities** (shallow → deep modules), renders a visual HTML report of candidates, then grills the chosen one and updates `CONTEXT.md`/ADRs. Uses the `codebase-design` vocabulary |
+| `/repo` | Routes repo/worktree ops through `scripts/repo.sh`; isolates and stacks worktrees |
+| `/pr-security-review` | Independent security review before `gh pr create`, appending its section to the slice's validation record (acceptance, correctness, and runtime are validated earlier, by `/next`'s post-build barrier). Skippable for a single run only with a recorded reason (`record-verdict.sh --skip --reason …`) — surfaced loudly in the PR body, never silent |
+| `/security-review` | App-code security checklist (OWASP Top 10, secrets, authn/z, injection, XSS/CSRF, rate limiting, data exposure) — the checklist the PR gate's `security-reviewer` runs; also hand-invokable |
+| `/cloud-infra-security` | Cloud/IaC security checklist (IAM, network, secrets, logging, CI/CD, CDN/WAF, backups) — used when the diff touches infrastructure |
+| `/observability` | Shift-left observability. A **baseline** (structured logs, correct levels, no swallowed errors) applies to every build; a flag-gated **service standard** (RED metrics, OTel, tracing) enters `to-issues` acceptance criteria, `tdd` builds instrumented, and the `otel-observability-engineer` agent gates the build (in the post-build barrier, parallel to the acceptance/correctness/runtime gates). Always bundled but dormant unless enabled; `to-issues` runs a **backstop** that forces an enable-or-`waived` decision the moment a slice adds a request-serving path — so a service can't silently ship un-instrumented |
+| `/agent-controls` | The standard for human-agent systems under control — permissions, verification, approval, audit, secret handling, recovery, ownership — as a per-agent **operating contract**. Applied inward now: every bundled agent carries a `contract:` block (`test-proj.sh` checks it); the deliverable-facing gated layer is documented for when a project ships its own agent system |
+| `/journal` | Appends typed entries to `journal.yaml` (mostly automatic via hooks); the `run` type records each gate run as the pipeline audit trail |
+| `/sync-status` | Regenerates `STATUS.md` from current state (mostly automatic via hooks) |
+| `/codebase-researcher` | Optional read-only codebase mapper; writes findings to `docs/research/` |
+
+> `/grill-with-docs`, `/to-prd`, `/to-issues`, `/tdd`, `/codebase-design`, `/code-review`, `/diagnosing-bugs`, `/prototype`, and `/improve-codebase-architecture` are adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering) (MIT) — see [CREDITS.md](CREDITS.md).
+
+## Learn more
+
+**[docs/REFERENCE.md](docs/REFERENCE.md)** covers the internals: the living-status files (`STATUS.md` / `journal.yaml` schemas), doc-lifecycle frontmatter, `CONTEXT.md` and ADR conventions, the issue-tracker / task model, the full `/next` routing logic, every `repo.sh` subcommand, the PR-review gate flow, and the hooks each skill wires in.
+
+> The living-status approach is inspired by [Give Your AI Unlimited, Updated Context](https://towardsdatascience.com/give-your-ai-unlimited-updated-context/).
+
+## License
+
+[MIT](LICENSE) © 2026 Dackota Johnson. Several bundled skills are adapted from the MIT-licensed [mattpocock/skills](https://github.com/mattpocock/skills) — see [CREDITS.md](CREDITS.md).
